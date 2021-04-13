@@ -2,7 +2,7 @@ import CBEngine
 import gym
 import agent.gym_cfg as gym_cfg
 simulator_cfg_file = './cfg/simulator.cfg'
-mx_step = 3600
+mx_step = 360
 gym_cfg_instance = gym_cfg.gym_cfg()
 
 #gym

@@ -109,7 +109,8 @@ def process_roadnet(roadnet_file):
     #     'speed_limit': float. Road speed limit.
     #     'num_lanes': int. Number of lanes in this road.
     #     'inverse_road':  Road_id of inverse_road.
-    #     'lanes': dict. roads['lanes'][lane_id] = list of 3 int value. Contains the Steerability of lanes
+    #     'lanes': dict. roads[road_id]['lanes'][lane_id] = list of 3 int value. Contains the Steerability of lanes.
+    #               lane_id is road_id*100 + 0/1/2... For example, if road 9 have 3 lanes, then their id are 900, 901, 902
     # }
     # agents[agent_id] = list of length 8. contains the inroad0_id, inroad1_id, inroad2_id,inroad3_id, outroad0_id, outroad1_id, outroad2_id, outroad3_id
 
@@ -277,7 +278,7 @@ def run_simulation(agent_spec, simulator_cfg_file, gym_cfg):
     agent_id_list = list(set(agent_id_list))
     agent = agent_spec[scenario[0]]
     agent.load_agent_list(agent_id_list)
-
+    agent.load_roadnet(intersections, roads, agents)
     done = False
     # simulation
     step = 0
