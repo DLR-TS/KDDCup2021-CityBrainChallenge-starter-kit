@@ -217,8 +217,12 @@ def process_delay_index(lines, roads, step):
                 'route': list(map(int, list(map(float, lines[i + 4][2:])))),
                 'speed': float(lines[i + 5][2]),
                 'start_time': float(lines[i + 6][2]),
-                't_ff': float(lines[i+7][2])
+                't_ff': float(lines[i+7][2]),
+            ##############
+                'step': int(lines[i+8][2])
             }
+            step = now_dict['step']
+            ##################
             vehicles[vehicle_id] = now_dict
             tt = step - now_dict['start_time']
             tt_ff = now_dict['t_ff']
@@ -269,7 +273,8 @@ def run_simulation(agent_spec, simulator_cfg_file, gym_cfg):
     # read roadnet file, get data
     roadnet_path = Path(simulator_configs['road_file_addr'])
     intersections, roads, agents = process_roadnet(roadnet_path)
-
+    env.set_warning(0)
+    # env.set_log(0)
     # get agent instance
     observations, infos = env.reset()
     agent_id_list = []
@@ -282,8 +287,10 @@ def run_simulation(agent_spec, simulator_cfg_file, gym_cfg):
     done = False
     # simulation
     step = 0
+    sim_start = time.time()
     while not done:
         actions = {}
+        logger.info("step {}".format(step))
         step+=1
         all_info = {
             'observations':observations,
@@ -294,12 +301,14 @@ def run_simulation(agent_spec, simulator_cfg_file, gym_cfg):
         for agent_id in agent_id_list:
             if(dones[agent_id]):
                 done = True
-
+    sim_end = time.time()
+    logger.info("simulation cost : {}s".format(sim_end-sim_start))
     # read log file
     log_path = Path(simulator_configs['report_log_addr'])
     result = {}
     vehicle_last_occur = {}
 
+    eval_start = time.time()
     for dirpath, dirnames, file_names in os.walk(log_path):
         for file_name in [f for f in file_names if f.endswith(".log") and f.startswith('info_step')]:
             with open(log_path / file_name, 'r') as log_file:
@@ -343,7 +352,8 @@ def run_simulation(agent_spec, simulator_cfg_file, gym_cfg):
         d_i = -1
 
     last_d_i = np.mean(list(delay_index_temp.values()))
-
+    eval_end = time.time()
+    logger.info("scoring cost {}s".format(eval_end-eval_start))
     return len(vehicle_total_set),  last_d_i
 
 
@@ -396,6 +406,7 @@ if __name__ == "__main__":
         default=None,
         type=str
     )
+
 
     # result to be written in out/result.json
     result = {
