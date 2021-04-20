@@ -252,8 +252,29 @@ def process_delay_index(lines, roads, step):
     # 'vehicles' is a dict contains vehicle infomation at this snapshot
     return delay_index_list, vehicle_list, vehicles
 
+def process_score(log_path,roads,step,scores_dir):
+    result_write = {
+        "success": True,
+        "error_msg": "",
+        "data": {
+            "total_served_vehicles": -1,
+            "delay_index": -1
+        }
+    }
+    with open(log_path / "info_step {}.log".format(step)) as log_file:
+        lines = log_file.readlines()
+        lines = list(map(lambda x: x.rstrip('\n').split(' '), lines))
+        # process delay index
+        delay_index_list, vehicle_list, vehicles = process_delay_index(lines, roads, step)
+        v_len = len(vehicle_list)
+        delay_index = np.mean(delay_index_list)
+        result_write['data']['total_served_vehicles'] = v_len
+        result_write['data']['delay_index'] = delay_index
+        with open(scores_dir / 'scores {}.json'.format(step), 'w' ) as f_out:
+            json.dump(result_write,f_out,indent= 2)
 
-def run_simulation(agent_spec, simulator_cfg_file, gym_cfg):
+
+def run_simulation(agent_spec, simulator_cfg_file, gym_cfg,metric_period,scores_dir):
     logger.info("\n")
     logger.info("*" * 40)
 
@@ -264,7 +285,8 @@ def run_simulation(agent_spec, simulator_cfg_file, gym_cfg):
         'CBEngine-v0',
         simulator_cfg_file=simulator_cfg_file,
         thread_num=1,
-        gym_dict = gym_configs
+        gym_dict = gym_configs,
+        metric_period = metric_period
     )
     scenario = [
         'test'
@@ -274,7 +296,7 @@ def run_simulation(agent_spec, simulator_cfg_file, gym_cfg):
     roadnet_path = Path(simulator_configs['road_file_addr'])
     intersections, roads, agents = process_roadnet(roadnet_path)
     env.set_warning(0)
-    # env.set_log(0)
+    env.set_log(0)
     # get agent instance
     observations, infos = env.reset()
     agent_id_list = []
@@ -287,6 +309,7 @@ def run_simulation(agent_spec, simulator_cfg_file, gym_cfg):
     done = False
     # simulation
     step = 0
+    log_path = Path(simulator_configs['report_log_addr'])
     sim_start = time.time()
     while not done:
         actions = {}
@@ -298,13 +321,20 @@ def run_simulation(agent_spec, simulator_cfg_file, gym_cfg):
         }
         actions = agent.act(all_info)
         observations, rewards, dones, infos = env.step(actions)
+        if(step * 10 % metric_period == 0):
+            try:
+                process_score(log_path,roads,step*10-1,scores_dir)
+            except Exception as e:
+                print(e)
+                print('Error in process_score. Maybe no log')
+                continue
         for agent_id in agent_id_list:
             if(dones[agent_id]):
                 done = True
     sim_end = time.time()
     logger.info("simulation cost : {}s".format(sim_end-sim_start))
     # read log file
-    log_path = Path(simulator_configs['report_log_addr'])
+
     result = {}
     vehicle_last_occur = {}
 
@@ -407,7 +437,12 @@ if __name__ == "__main__":
         type=str
     )
 
-
+    parser.add_argument(
+        "--metric_period",
+        help="period of scoring",
+        default=3600,
+        type=int
+    )
     # result to be written in out/result.json
     result = {
         "success": False,
@@ -421,7 +456,7 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
     msg = None
-
+    metric_period = args.metric_period
     # get input and output directory
     simulator_cfg_file = args.sim_cfg
     try:
@@ -448,7 +483,7 @@ if __name__ == "__main__":
     # simulation
     start_time = time.time()
     try:
-        scores = run_simulation(agent_spec, simulator_cfg_file, gym_cfg)
+        scores = run_simulation(agent_spec, simulator_cfg_file, gym_cfg,metric_period,scores_dir)
     except Exception as e:
         msg = format_exception(e)
         result['error_msg'] = msg
