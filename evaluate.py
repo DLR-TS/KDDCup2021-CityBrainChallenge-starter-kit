@@ -257,7 +257,8 @@ def process_score(log_path,roads,step,scores_dir):
         "success": True,
         "error_msg": "",
         "data": {
-            "total_served_vehicles": -1,
+            # this period served vehicle doesn't include vehicles that end before 'step - metric_period'
+            "this_period_served_vehicle": -1,
             "delay_index": -1
         }
     }
@@ -296,7 +297,7 @@ def run_simulation(agent_spec, simulator_cfg_file, gym_cfg,metric_period,scores_
     roadnet_path = Path(simulator_configs['road_file_addr'])
     intersections, roads, agents = process_roadnet(roadnet_path)
     env.set_warning(0)
-    env.set_log(0)
+    # env.set_log(0)
     # get agent instance
     observations, infos = env.reset()
     agent_id_list = []

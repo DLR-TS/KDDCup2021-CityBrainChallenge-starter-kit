@@ -92,7 +92,7 @@ class TestAgent():
 
 
             actions[agent] = self.now_phase[agent]
-        print(self.intersections,self.roads,self.agents)
+        # print(self.intersections,self.roads,self.agents)
         return actions
 
 scenario_dirs = [
