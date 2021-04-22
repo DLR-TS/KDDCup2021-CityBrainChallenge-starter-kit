@@ -239,13 +239,15 @@ def process_delay_index(lines, roads, step):
                 elif(pos > current_road_pos):
                     tt_f_r += roads[road_id]['length'] / roads[road_id]['speed_limit']
 
-            vehicles[vehicle_id]['delay_index'] = (tt + tt_f_r) / tt_ff
-
+            # vehicles[vehicle_id]['delay_index'] = (tt + tt_f_r) / tt_ff
+            if(tt>0 and tt_ff - tt_f_r > 0):
+                vehicles[vehicle_id]['delay_index'] = tt / (tt_ff - tt_f_r)
     vehicle_list = list(vehicles.keys())
     delay_index_list = []
     for vehicle_id, dict in vehicles.items():
         # res = max(res, dict['delay_index'])
-        delay_index_list.append(dict['delay_index'])
+        if('delay_index' in dict.keys()):
+            delay_index_list.append(dict['delay_index'])
 
     # 'delay_index_list' contains all vehicles' delayindex at this snapshot.
     # 'vehicle_list' contains the vehicle_id at this snapshot.
@@ -269,7 +271,7 @@ def process_score(log_path,roads,step,scores_dir):
         delay_index_list, vehicle_list, vehicles = process_delay_index(lines, roads, step)
         v_len = len(vehicle_list)
         delay_index = np.mean(delay_index_list)
-        result_write['data']['total_served_vehicles'] = v_len
+        result_write['data']['this_period_served_vehicle'] = v_len
         result_write['data']['delay_index'] = delay_index
         with open(scores_dir / 'scores {}.json'.format(step), 'w' ) as f_out:
             json.dump(result_write,f_out,indent= 2)
