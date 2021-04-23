@@ -18,7 +18,7 @@ class TestAgent():
     def __init__(self):
         self.now_phase = {}
         self.green_sec = 40
-        self.max_phase = 4
+        self.max_phase = 8
         self.last_change_step = {}
         self.agent_list = []
         self.phase_passablelane = {}
