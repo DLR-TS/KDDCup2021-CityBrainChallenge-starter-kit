@@ -192,8 +192,12 @@ def process_delay_index(lines, roads, step):
                 'route': list(map(int, list(map(float, lines[i + 4][2:])))),
                 'speed': float(lines[i + 5][2]),
                 'start_time': float(lines[i + 6][2]),
-                't_ff': float(lines[i+7][2])
+                't_ff': float(lines[i+7][2]),
+            ##############
+                'step': int(lines[i+8][2])
             }
+            step = now_dict['step']
+            ##################
             vehicles[vehicle_id] = now_dict
             tt = step - now_dict['start_time']
             tt_ff = now_dict['t_ff']
@@ -210,18 +214,45 @@ def process_delay_index(lines, roads, step):
                 elif(pos > current_road_pos):
                     tt_f_r += roads[road_id]['length'] / roads[road_id]['speed_limit']
 
-            vehicles[vehicle_id]['delay_index'] = (tt + tt_f_r) / tt_ff
-
+            # vehicles[vehicle_id]['delay_index'] = (tt + tt_f_r) / tt_ff
+            if(tt>0 and tt_ff - tt_f_r > 0):
+                vehicles[vehicle_id]['delay_index'] = tt / (tt_ff - tt_f_r)
     vehicle_list = list(vehicles.keys())
     delay_index_list = []
     for vehicle_id, dict in vehicles.items():
         # res = max(res, dict['delay_index'])
-        delay_index_list.append(dict['delay_index'])
+        if('delay_index' in dict.keys()):
+            delay_index_list.append(dict['delay_index'])
 
+    # 'delay_index_list' contains all vehicles' delayindex at this snapshot.
+    # 'vehicle_list' contains the vehicle_id at this snapshot.
+    # 'vehicles' is a dict contains vehicle infomation at this snapshot
     return delay_index_list, vehicle_list, vehicles
 
+def process_score(log_path,roads,step,scores_dir):
+    result_write = {
+        "success": True,
+        "error_msg": "",
+        "data": {
+            # this period served vehicle doesn't include vehicles that end before 'step - metric_period'
+            "this_period_served_vehicle": -1,
+            "delay_index": -1
+        }
+    }
+    with open(log_path / "info_step {}.log".format(step)) as log_file:
+        lines = log_file.readlines()
+        lines = list(map(lambda x: x.rstrip('\n').split(' '), lines))
+        # process delay index
+        delay_index_list, vehicle_list, vehicles = process_delay_index(lines, roads, step)
+        v_len = len(vehicle_list)
+        delay_index = np.mean(delay_index_list)
+        result_write['data']['this_period_served_vehicle'] = v_len
+        result_write['data']['delay_index'] = delay_index
+        with open(scores_dir / 'scores {}.json'.format(step), 'w' ) as f_out:
+            json.dump(result_write,f_out,indent= 2)
 
-def train(agent_spec, simulator_cfg_file, gym_cfg):
+
+def train(agent_spec, simulator_cfg_file, gym_cfg,metric_period):
     logger.info("\n")
     logger.info("*" * 40)
 
@@ -231,7 +262,8 @@ def train(agent_spec, simulator_cfg_file, gym_cfg):
         'CBEngine-v0',
         simulator_cfg_file=simulator_cfg_file,
         thread_num=1,
-        gym_dict=gym_configs
+        gym_dict=gym_configs,
+        metric_period=metric_period
     )
     scenario = [
         'test'
@@ -250,7 +282,7 @@ def train(agent_spec, simulator_cfg_file, gym_cfg):
     agent_id_list = list(set(agent_id_list))
     agent = agent_spec[scenario[0]]
     agent.load_agent_list(agent_id_list)
-
+    agent.load_roadnet(intersections,roads,agents)
     # Here begins the code for training
 
     total_decision_num = 0
@@ -357,28 +389,30 @@ def train(agent_spec, simulator_cfg_file, gym_cfg):
                                                           episodes_rewards[agent_id] / episodes_decision_num))
 
 
-def run_simulation(agent_spec, simulator_cfg_file, gym_cfg):
+def run_simulation(agent_spec, simulator_cfg_file, gym_cfg,metric_period,scores_dir):
     logger.info("\n")
     logger.info("*" * 40)
 
+    # get gym instance
     gym_configs = gym_cfg.cfg
     simulator_configs = read_config(simulator_cfg_file)
     env = gym.make(
         'CBEngine-v0',
         simulator_cfg_file=simulator_cfg_file,
         thread_num=1,
-        gym_dict=gym_configs
+        gym_dict = gym_configs,
+        metric_period = metric_period
     )
     scenario = [
         'test'
     ]
 
-    done = False
-
+    # read roadnet file, get data
     roadnet_path = Path(simulator_configs['road_file_addr'])
-
     intersections, roads, agents = process_roadnet(roadnet_path)
-
+    env.set_warning(0)
+    # env.set_log(0)
+    # get agent instance
     observations, infos = env.reset()
     agent_id_list = []
     for k in observations:
@@ -386,37 +420,46 @@ def run_simulation(agent_spec, simulator_cfg_file, gym_cfg):
     agent_id_list = list(set(agent_id_list))
     agent = agent_spec[scenario[0]]
     agent.load_agent_list(agent_id_list)
-
-    env.set_log(1)
-    env.set_warning(1)
-    agent.epsilon = 0
-
+    agent.load_roadnet(intersections, roads, agents)
+    done = False
+    # simulation
     step = 0
-
+    log_path = Path(simulator_configs['report_log_addr'])
+    sim_start = time.time()
     while not done:
         actions = {}
-        step += 1
+        logger.info("step {}".format(step))
+        step+=1
         all_info = {
-            'observations': observations,
-            'info': infos
+            'observations':observations,
+            'info':infos
         }
         actions = agent.act(all_info)
         observations, rewards, dones, infos = env.step(actions)
+        if(step * 10 % metric_period == 0):
+            try:
+                process_score(log_path,roads,step*10-1,scores_dir)
+            except Exception as e:
+                print(e)
+                print('Error in process_score. Maybe no log')
+                continue
         for agent_id in agent_id_list:
-            if (dones[agent_id]):
+            if(dones[agent_id]):
                 done = True
-    time = env.eng.get_average_travel_time()
-
+    sim_end = time.time()
+    logger.info("simulation cost : {}s".format(sim_end-sim_start))
     # read log file
-    log_path = Path(simulator_configs['report_log_addr'])
+
     result = {}
     vehicle_last_occur = {}
+
+    eval_start = time.time()
     for dirpath, dirnames, file_names in os.walk(log_path):
         for file_name in [f for f in file_names if f.endswith(".log") and f.startswith('info_step')]:
             with open(log_path / file_name, 'r') as log_file:
                 pattern = '[0-9]+'
                 step = list(map(int, re.findall(pattern, file_name)))[0]
-                if (step >= int(simulator_configs['max_time_epoch'])):
+                if(step >= int(simulator_configs['max_time_epoch'])):
                     continue
                 lines = log_file.readlines()
                 lines = list(map(lambda x: x.rstrip('\n').split(' '), lines))
@@ -424,12 +467,12 @@ def run_simulation(agent_spec, simulator_cfg_file, gym_cfg):
                 # result[step]['vehicle_num'] = int(lines[0][0])
 
                 # process delay index
-                # delay_index, vehicle_list = process_delay_index(lines, roads, step)
                 delay_index_list, vehicle_list, vehicles = process_delay_index(lines, roads, step)
-
                 result[step]['vehicle_list'] = vehicle_list
                 result[step]['delay_index'] = delay_index_list
                 result[step]['vehicles'] = vehicles
+
+
     steps = list(result.keys())
     steps.sort()
     for step in steps:
@@ -441,23 +484,23 @@ def run_simulation(agent_spec, simulator_cfg_file, gym_cfg):
         res = vehicle_last_occur[vehicle]['delay_index']
         delay_index_temp[vehicle] = res
 
-    # last calc
+    # calc
     vehicle_total_set = set()
     delay_index = []
     for k, v in result.items():
-        # vehicle_num.append(v['vehicle_num'])
         vehicle_total_set = vehicle_total_set | set(v['vehicle_list'])
-        # delay_index.append(v['delay_index'])
         delay_index += delay_index_list
-    if (len(delay_index) > 0):
+
+    if(len(delay_index)>0):
         d_i = np.mean(delay_index)
     else:
         d_i = -1
 
     last_d_i = np.mean(list(delay_index_temp.values()))
-    delay_index = list(delay_index_temp.values())
+    eval_end = time.time()
+    logger.info("scoring cost {}s".format(eval_end-eval_start))
+    return len(vehicle_total_set),  last_d_i
 
-    return len(vehicle_total_set), last_d_i
 
 
 # def write_result(result, output_path):
@@ -515,11 +558,16 @@ if __name__ == "__main__":
         default=None,
         type=str
     )
-
+    parser.add_argument(
+        "--metric_period",
+        help="period of scoring",
+        default=3600,
+        type=int
+    )
     # Add more argument for training.
 
     parser.add_argument('--thread', type=int, default=8, help='number of threads')
-    parser.add_argument('--steps', type=int, default=3600, help='number of steps')
+    parser.add_argument('--steps', type=int, default=360, help='number of steps')
     parser.add_argument('--action_interval', type=int, default=40, help='how often agent make decisions')
     parser.add_argument('--episodes', type=int, default=2, help='training episodes')
     parser.add_argument('--save_model', action="store_true", default=False)
@@ -538,8 +586,8 @@ if __name__ == "__main__":
             "delay_index": -1
         }
     }
-
     args = parser.parse_args()
+    metric_period = args.metric_period
     if not os.path.exists(args.log_dir):
         os.makedirs(args.log_dir)
     logger = logging.getLogger('main')
@@ -576,8 +624,8 @@ if __name__ == "__main__":
 
     start_time = time.time()
     try:
-        train(agent_spec, simulator_cfg_file, gym_cfg)
-        scores = run_simulation(agent_spec, simulator_cfg_file, gym_cfg)
+        train(agent_spec, simulator_cfg_file, gym_cfg,metric_period)
+        scores = run_simulation(agent_spec, simulator_cfg_file, gym_cfg,metric_period,scores_dir)
     except Exception as e:
         msg = format_exception(e)
         result['error_msg'] = msg
