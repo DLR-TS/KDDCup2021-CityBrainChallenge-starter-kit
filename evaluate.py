@@ -238,7 +238,7 @@ def process_delay_index(lines, roads, step):
                                now_dict['distance']) / roads[road_id]['speed_limit']
                 elif(pos > current_road_pos):
                     tt_f_r += roads[road_id]['length'] / roads[road_id]['speed_limit']
-
+            vehicles[vehicle_id]['tt_f_r'] = tt_f_r
             # vehicles[vehicle_id]['delay_index'] = (tt + tt_f_r) / tt_ff
             if(tt>0 and tt_ff - tt_f_r > 0):
                 vehicles[vehicle_id]['delay_index'] = tt / (tt_ff - tt_f_r)
@@ -369,8 +369,9 @@ def run_simulation(agent_spec, simulator_cfg_file, gym_cfg,metric_period,scores_
 
     delay_index_temp = {}
     for vehicle in vehicle_last_occur.keys():
-        res = vehicle_last_occur[vehicle]['delay_index']
-        delay_index_temp[vehicle] = res
+        if('delay_index' in vehicle_last_occur[vehicle]):
+            res = vehicle_last_occur[vehicle]['delay_index']
+            delay_index_temp[vehicle] = res
 
     # calc
     vehicle_total_set = set()
