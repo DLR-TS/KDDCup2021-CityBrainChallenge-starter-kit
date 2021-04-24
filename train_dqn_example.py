@@ -519,8 +519,8 @@ if __name__ == "__main__":
     # Add more argument for training.
 
     parser.add_argument('--thread', type=int, default=8, help='number of threads')
-    parser.add_argument('--steps', type=int, default=3600, help='number of steps')
-    parser.add_argument('--action_interval', type=int, default=40, help='how often agent make decisions')
+    parser.add_argument('--steps', type=int, default=360, help='number of steps')
+    parser.add_argument('--action_interval', type=int, default=4, help='how often agent make decisions')
     parser.add_argument('--episodes', type=int, default=2, help='training episodes')
     parser.add_argument('--save_model', action="store_true", default=False)
     parser.add_argument('--load_model', action="store_true", default=False)
