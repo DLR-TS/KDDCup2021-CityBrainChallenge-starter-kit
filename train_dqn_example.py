@@ -90,7 +90,7 @@ def load_agent_submission(submission_dir: Path):
 
     # This will fail w/ an import error of the submissions directory does not exist
     import gym_cfg as gym_cfg_submission
-    import agent as agent_submission
+    import agent_DQN as agent_submission
 
     gym_cfg_instance = gym_cfg_submission.gym_cfg()
 
@@ -294,6 +294,7 @@ def train(agent_spec, simulator_cfg_file, gym_cfg):
                 actions = agent.act_(observations_for_agent)
 
                 rewards_list = {}
+
                 actions_ = {}
                 for key in actions.keys():
                     actions_[key] = actions[key] + 1
@@ -312,6 +313,7 @@ def train(agent_spec, simulator_cfg_file, gym_cfg):
                             rewards_list[agent_id] += pressure
                         else:
                             rewards_list[agent_id] = pressure
+
 
                 rewards = rewards_list
                 new_observations_for_agent = {}
@@ -519,16 +521,16 @@ if __name__ == "__main__":
     # Add more argument for training.
 
     parser.add_argument('--thread', type=int, default=8, help='number of threads')
-    parser.add_argument('--steps', type=int, default=3600, help='number of steps')
-    parser.add_argument('--action_interval', type=int, default=40, help='how often agent make decisions')
-    parser.add_argument('--episodes', type=int, default=2, help='training episodes')
+    parser.add_argument('--steps', type=int, default=360, help='number of steps')
+    parser.add_argument('--action_interval', type=int, default=2, help='how often agent make decisions')
+    parser.add_argument('--episodes', type=int, default=100, help='training episodes')
     parser.add_argument('--save_model', action="store_true", default=False)
     parser.add_argument('--load_model', action="store_true", default=False)
     parser.add_argument("--save_rate", type=int, default=5,
                         help="save model once every time this many episodes are completed")
-    parser.add_argument('--save_dir', type=str, default="model/presslight_1234",
+    parser.add_argument('--save_dir', type=str, default="model/dqn_warm_up",
                         help='directory in which model should be saved')
-    parser.add_argument('--log_dir', type=str, default="cmd_log/presslight_1234", help='directory in which logs should be saved')
+    parser.add_argument('--log_dir', type=str, default="cmd_log/dqn_warm_up", help='directory in which logs should be saved')
 
     result = {
         "success": False,
@@ -576,7 +578,7 @@ if __name__ == "__main__":
 
     start_time = time.time()
     try:
-        train(agent_spec, simulator_cfg_file, gym_cfg)
+        # train(agent_spec, simulator_cfg_file, gym_cfg)
         scores = run_simulation(agent_spec, simulator_cfg_file, gym_cfg)
     except Exception as e:
         msg = format_exception(e)
