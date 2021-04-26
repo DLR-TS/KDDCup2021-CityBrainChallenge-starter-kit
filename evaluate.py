@@ -261,9 +261,13 @@ def process_score(log_path,roads,step,scores_dir):
         "data": {
             # this period served vehicle doesn't include vehicles that end before 'step - metric_period'
             "this_period_served_vehicle": -1,
-            "delay_index": -1
+            "delay_index": -1,
+            "delay_over_10_vehicles":0,
+            "delay_over_20_vehicles":0
         }
     }
+    cnt_10 = 0
+    cnt_20 = 0
     with open(log_path / "info_step {}.log".format(step)) as log_file:
         lines = log_file.readlines()
         lines = list(map(lambda x: x.rstrip('\n').split(' '), lines))
@@ -271,6 +275,14 @@ def process_score(log_path,roads,step,scores_dir):
         delay_index_list, vehicle_list, vehicles = process_delay_index(lines, roads, step)
         v_len = len(vehicle_list)
         delay_index = np.mean(delay_index_list)
+        for vehicle in vehicles.keys():
+            if ('delay_index' in vehicles[vehicle].keys()):
+                if(vehicles[vehicle]['delay_index']>10.0):
+                    cnt_10+=1
+                if(vehicles[vehicle]['delay_index']>20.0):
+                    cnt_20+=1
+        result_write['data']["delay_over_10_vehicles"]= cnt_10
+        result_write['data']["delay_over_20_vehicles"]= cnt_20
         result_write['data']['this_period_served_vehicle'] = v_len
         result_write['data']['delay_index'] = delay_index
         with open(scores_dir / 'scores {}.json'.format(step), 'w' ) as f_out:
