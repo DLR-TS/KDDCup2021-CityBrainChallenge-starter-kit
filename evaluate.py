@@ -239,9 +239,9 @@ def process_delay_index(lines, roads, step):
                 elif(pos > current_road_pos):
                     tt_f_r += roads[road_id]['length'] / roads[road_id]['speed_limit']
             vehicles[vehicle_id]['tt_f_r'] = tt_f_r
-            # vehicles[vehicle_id]['delay_index'] = (tt + tt_f_r) / tt_ff
-            if(tt>0 and tt_ff - tt_f_r > 0):
-                vehicles[vehicle_id]['delay_index'] = tt / (tt_ff - tt_f_r)
+            vehicles[vehicle_id]['delay_index'] = (tt + tt_f_r) / tt_ff
+            # if(tt>0 and tt_ff - tt_f_r > 0):
+            #     vehicles[vehicle_id]['delay_index'] = tt / (tt_ff - tt_f_r)
     vehicle_list = list(vehicles.keys())
     delay_index_list = []
     for vehicle_id, dict in vehicles.items():
@@ -312,6 +312,8 @@ def run_simulation(agent_spec, simulator_cfg_file, gym_cfg,metric_period,scores_
     intersections, roads, agents = process_roadnet(roadnet_path)
     env.set_warning(0)
     # env.set_log(0)
+    # env.set_info(0)
+    # env.set_ui(0)
     # get agent instance
     observations, infos = env.reset()
     agent_id_list = []
