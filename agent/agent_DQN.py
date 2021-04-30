@@ -31,6 +31,7 @@ from keras.models import Model
 
 # contains all of the intersections
 
+
 class TestAgent():
     def __init__(self):
 
@@ -57,15 +58,13 @@ class TestAgent():
         self.batch_size = 32
         self.ob_length = 24
 
-        # here we only use the first five phase instead of eight, you can try eight yourself.
-        self.action_space = 4
+        self.action_space = 8
 
         self.model = self._build_model()
 
         # Remember to uncomment the following lines when submitting, and submit your model file as well.
-        path = os.path.split(os.path.realpath(__file__))[0]
-        self.load_model(path, 99)
-
+        # path = os.path.split(os.path.realpath(__file__))[0]
+        # self.load_model(path, 99)
         self.target_model = self._build_model()
         self.update_target_network()
 
