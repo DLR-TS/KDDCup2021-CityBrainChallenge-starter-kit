@@ -77,7 +77,7 @@ def load_agent_submission(submission_dir: Path):
 
     # This will fail w/ an import error of the submissions directory does not exist
     import gym_cfg as gym_cfg_submission
-    import agent_DQN as agent_submission
+    import agent as agent_submission
 
     gym_cfg_instance = gym_cfg_submission.gym_cfg()
 
