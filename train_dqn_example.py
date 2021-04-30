@@ -1,3 +1,5 @@
+import datetime
+
 import CBEngine
 import json
 import traceback
@@ -10,7 +12,6 @@ from pathlib import Path
 import re
 import gym
 import numpy as np
-from datetime import datetime
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__file__)
@@ -33,7 +34,6 @@ def resolve_dirs(root_path: str, input_dir: str = None, output_dir: str = None):
         input_dir = Path(input_dir)
         output_dir = Path(output_dir)
 
-        # path in cfg must be consistent with middle_output_dir
         submission_dir = input_dir
         scores_dir = output_dir
 
@@ -41,18 +41,12 @@ def resolve_dirs(root_path: str, input_dir: str = None, output_dir: str = None):
         logger.info(f"output_dir={pretty_files(output_dir)}")
     else:
         raise ValueError('need input dir')
-        # # XXX: The examples in starter_kit is what submissions are based
-        # #      on, and are end-end functional on their own.
-        # submission_dir = (root_path / "../../starter_kit/rllib_example").resolve()
-        # eval_scenarios_dir = (root_path / "../../dataset_evaluation").resolve()
-        # scores_dir = (root_path / "../../scores").resolve()
 
     if not scores_dir.exists():
         os.makedirs(scores_dir)
 
     logger.info(f"submission_dir={pretty_files(submission_dir)}")
     logger.info(f"scores_dir={pretty_files(scores_dir)}")
-    output_path = scores_dir / "scores.txt"
 
     if not submission_dir.is_dir():
         logger.warning(f"submission_dir={submission_dir} does not exist")
@@ -73,12 +67,7 @@ def load_agent_submission(submission_dir: Path):
 
             if file_name == "gym_cfg.py":
                 cfg_path = dirpath
-
-        # for file_name in [f for f in file_names if f.endswith(".txt")]:
-        #     if file_name == "requirements.txt":
-        #         logger.info("find requirments.txt, installing requirements")
-        #         os.system(f"pip install -r {dirpath}/{file_name}")
-
+    # error
     assert (
         module_path is not None
     ), "Cannot find file named agent.py, please check your submission zip"
@@ -109,10 +98,31 @@ def read_config(cfg_file):
 
 
 def process_roadnet(roadnet_file):
+    # intersections[key_id] = {
+    #     'have_signal': bool,
+    #     'end_roads': list of road_id. Roads that end at this intersection. The order is random.
+    #     'start_roads': list of road_id. Roads that start at this intersection. The order is random.
+    #     'lanes': list, contains the lane_id in. The order is explained in Docs.
+    # }
+    # roads[road_id] = {
+    #     'start_inter':int. Start intersection_id.
+    #     'end_inter':int. End intersection_id.
+    #     'length': float. Road length.
+    #     'speed_limit': float. Road speed limit.
+    #     'num_lanes': int. Number of lanes in this road.
+    #     'inverse_road':  Road_id of inverse_road.
+    #     'lanes': dict. roads[road_id]['lanes'][lane_id] = list of 3 int value. Contains the Steerability of lanes.
+    #               lane_id is road_id*100 + 0/1/2... For example, if road 9 have 3 lanes, then their id are 900, 901, 902
+    # }
+    # agents[agent_id] = list of length 8. contains the inroad0_id, inroad1_id, inroad2_id,inroad3_id, outroad0_id, outroad1_id, outroad2_id, outroad3_id
+
     intersections = {}
     roads = {}
     agents = {}
-    lane_vehicle_state = {}
+
+    agent_num = 0
+    road_num = 0
+    signal_num = 0
     with open(roadnet_file, 'r') as f:
         lines = f.readlines()
         cnt = 0
@@ -135,19 +145,17 @@ def process_roadnet(roadnet_file):
             else:
                 if (cnt == 1):
                     intersections[int(line[2])] = {
-                        'latitude': float(line[0]),
-                        'longitude': float(line[1]),
                         'have_signal': int(line[3]),
-                        'end_roads': []
+                        'end_roads': [],
+                        'start_roads': [],
+                        'lanes':[]
                     }
                 elif (cnt == 2):
                     if (len(line) != 8):
                         road_id = pre_road[is_obverse]
                         roads[road_id]['lanes'] = {}
                         for i in range(roads[road_id]['num_lanes']):
-                            roads[road_id]['lanes'][road_id * 100 +
-                                                    i] = list(map(int, line[i * 3:i * 3 + 3]))
-                            lane_vehicle_state[road_id * 100 + i] = set()
+                            roads[road_id]['lanes'][road_id * 100 + i] = list(map(int, line[i * 3:i * 3 + 3]))
                         is_obverse ^= 1
                     else:
                         roads[int(line[-2])] = {
@@ -155,26 +163,45 @@ def process_roadnet(roadnet_file):
                             'end_inter': int(line[1]),
                             'length': float(line[2]),
                             'speed_limit': float(line[3]),
-                            'num_lanes': int(line[4])
+                            'num_lanes': int(line[4]),
+                            'inverse_road': int(line[-1])
                         }
                         roads[int(line[-1])] = {
                             'start_inter': int(line[1]),
                             'end_inter': int(line[0]),
                             'length': float(line[2]),
                             'speed_limit': float(line[3]),
-                            'num_lanes': int(line[5])
+                            'num_lanes': int(line[5]),
+                            'inverse_road': int(line[-2])
                         }
-                        intersections[int(line[0])]['end_roads'].append(
-                            int(line[-1]))
-                        intersections[int(line[1])]['end_roads'].append(
-                            int(line[-2]))
+                        intersections[int(line[0])]['end_roads'].append(int(line[-1]))
+                        intersections[int(line[1])]['end_roads'].append(int(line[-2]))
+                        intersections[int(line[0])]['start_roads'].append(int(line[-2]))
+                        intersections[int(line[1])]['start_roads'].append(int(line[-1]))
                         pre_road = (int(line[-2]), int(line[-1]))
                 else:
                     # 4 out-roads
-                    # agents[int(line[0])] = list(map(int,line[1:]))
-                    # 4 in-roads
-                    agents[int(line[0])] = intersections[int(
-                        line[0])]['end_roads']
+                    signal_road_order = list(map(int, line[1:]))
+                    now_agent = int(line[0])
+                    in_roads = []
+                    for road in signal_road_order:
+                        if (road != -1):
+                            in_roads.append(roads[road]['inverse_road'])
+                        else:
+                            in_roads.append(-1)
+                    in_roads += signal_road_order
+                    agents[now_agent] = in_roads
+    for agent, agent_roads in agents.items():
+        intersections[agent]['lanes'] = []
+        for road in agent_roads:
+            ## here we treat road -1 have 3 lanes
+            if (road == -1):
+                for i in range(3):
+                    intersections[agent]['lanes'].append(-1)
+            else:
+                for lane in roads[road]['lanes'].keys():
+                    intersections[agent]['lanes'].append(lane)
+
     return intersections, roads, agents
 
 
@@ -213,10 +240,9 @@ def process_delay_index(lines, roads, step):
                                now_dict['distance']) / roads[road_id]['speed_limit']
                 elif(pos > current_road_pos):
                     tt_f_r += roads[road_id]['length'] / roads[road_id]['speed_limit']
+            vehicles[vehicle_id]['tt_f_r'] = tt_f_r
+            vehicles[vehicle_id]['delay_index'] = (tt + tt_f_r) / tt_ff
 
-            # vehicles[vehicle_id]['delay_index'] = (tt + tt_f_r) / tt_ff
-            if(tt>0 and tt_ff - tt_f_r > 0):
-                vehicles[vehicle_id]['delay_index'] = tt / (tt_ff - tt_f_r)
     vehicle_list = list(vehicles.keys())
     delay_index_list = []
     for vehicle_id, dict in vehicles.items():
@@ -231,14 +257,12 @@ def process_delay_index(lines, roads, step):
 
 def process_score(log_path,roads,step,scores_dir):
     result_write = {
-        "success": True,
-        "error_msg": "",
         "data": {
-            # this period served vehicle doesn't include vehicles that end before 'step - metric_period'
-            "this_period_served_vehicle": -1,
+            "total_served_vehicles": -1,
             "delay_index": -1
         }
     }
+
     with open(log_path / "info_step {}.log".format(step)) as log_file:
         lines = log_file.readlines()
         lines = list(map(lambda x: x.rstrip('\n').split(' '), lines))
@@ -246,13 +270,16 @@ def process_score(log_path,roads,step,scores_dir):
         delay_index_list, vehicle_list, vehicles = process_delay_index(lines, roads, step)
         v_len = len(vehicle_list)
         delay_index = np.mean(delay_index_list)
-        result_write['data']['this_period_served_vehicle'] = v_len
+
+        result_write['data']['total_served_vehicles'] = v_len
         result_write['data']['delay_index'] = delay_index
         with open(scores_dir / 'scores {}.json'.format(step), 'w' ) as f_out:
             json.dump(result_write,f_out,indent= 2)
 
+    return result_write['data']['total_served_vehicles'],result_write['data']['delay_index']
 
-def train(agent_spec, simulator_cfg_file, gym_cfg,metric_period):
+
+def train(agent_spec, simulator_cfg_file, gym_cfg, metric_period):
     logger.info("\n")
     logger.info("*" * 40)
 
@@ -391,7 +418,7 @@ def train(agent_spec, simulator_cfg_file, gym_cfg,metric_period):
                                                           episodes_rewards[agent_id] / episodes_decision_num))
 
 
-def run_simulation(agent_spec, simulator_cfg_file, gym_cfg,metric_period,scores_dir):
+def run_simulation(agent_spec, simulator_cfg_file, gym_cfg,metric_period,scores_dir,threshold):
     logger.info("\n")
     logger.info("*" * 40)
 
@@ -412,8 +439,10 @@ def run_simulation(agent_spec, simulator_cfg_file, gym_cfg,metric_period,scores_
     # read roadnet file, get data
     roadnet_path = Path(simulator_configs['road_file_addr'])
     intersections, roads, agents = process_roadnet(roadnet_path)
-    env.set_warning(0)
-    # env.set_log(0)
+    env.set_warning(1)
+    env.set_log(1)
+    env.set_info(1)
+    env.set_ui(1)
     # get agent instance
     observations, infos = env.reset()
     agent_id_list = []
@@ -428,9 +457,11 @@ def run_simulation(agent_spec, simulator_cfg_file, gym_cfg,metric_period,scores_
     step = 0
     log_path = Path(simulator_configs['report_log_addr'])
     sim_start = time.time()
+
+    tot_v  = -1
+    d_i = -1
     while not done:
         actions = {}
-        logger.info("step {}".format(step))
         step+=1
         all_info = {
             'observations':observations,
@@ -440,11 +471,13 @@ def run_simulation(agent_spec, simulator_cfg_file, gym_cfg,metric_period,scores_
         observations, rewards, dones, infos = env.step(actions)
         if(step * 10 % metric_period == 0):
             try:
-                process_score(log_path,roads,step*10-1,scores_dir)
+                tot_v , d_i = process_score(log_path,roads,step*10-1,scores_dir)
             except Exception as e:
                 print(e)
                 print('Error in process_score. Maybe no log')
                 continue
+        if(d_i > threshold):
+            break
         for agent_id in agent_id_list:
             if(dones[agent_id]):
                 done = True
@@ -452,66 +485,58 @@ def run_simulation(agent_spec, simulator_cfg_file, gym_cfg,metric_period,scores_
     logger.info("simulation cost : {}s".format(sim_end-sim_start))
     # read log file
 
-    result = {}
-    vehicle_last_occur = {}
+    # result = {}
+    # vehicle_last_occur = {}
 
-    eval_start = time.time()
-    for dirpath, dirnames, file_names in os.walk(log_path):
-        for file_name in [f for f in file_names if f.endswith(".log") and f.startswith('info_step')]:
-            with open(log_path / file_name, 'r') as log_file:
-                pattern = '[0-9]+'
-                step = list(map(int, re.findall(pattern, file_name)))[0]
-                if(step >= int(simulator_configs['max_time_epoch'])):
-                    continue
-                lines = log_file.readlines()
-                lines = list(map(lambda x: x.rstrip('\n').split(' '), lines))
-                result[step] = {}
-                # result[step]['vehicle_num'] = int(lines[0][0])
+    # eval_start = time.time()
+    # for dirpath, dirnames, file_names in os.walk(log_path):
+    #     for file_name in [f for f in file_names if f.endswith(".log") and f.startswith('info_step')]:
+    #         with open(log_path / file_name, 'r') as log_file:
+    #             pattern = '[0-9]+'
+    #             step = list(map(int, re.findall(pattern, file_name)))[0]
+    #             if(step >= int(simulator_configs['max_time_epoch'])):
+    #                 continue
+    #             lines = log_file.readlines()
+    #             lines = list(map(lambda x: x.rstrip('\n').split(' '), lines))
+    #             result[step] = {}
+    #             # result[step]['vehicle_num'] = int(lines[0][0])
+    #
+    #             # process delay index
+    #             delay_index_list, vehicle_list, vehicles = process_delay_index(lines, roads, step)
+    #             result[step]['vehicle_list'] = vehicle_list
+    #             result[step]['delay_index'] = delay_index_list
+    #             result[step]['vehicles'] = vehicles
+    #
+    #
+    # steps = list(result.keys())
+    # steps.sort()
+    # for step in steps:
+    #     for vehicle in result[step]['vehicles'].keys():
+    #         vehicle_last_occur[vehicle] = result[step]['vehicles'][vehicle]
+    #
+    # delay_index_temp = {}
+    # for vehicle in vehicle_last_occur.keys():
+    #     if('delay_index' in vehicle_last_occur[vehicle]):
+    #         res = vehicle_last_occur[vehicle]['delay_index']
+    #         delay_index_temp[vehicle] = res
+    #
+    # # calc
+    # vehicle_total_set = set()
+    # delay_index = []
+    # for k, v in result.items():
+    #     vehicle_total_set = vehicle_total_set | set(v['vehicle_list'])
+    #     delay_index += delay_index_list
+    #
+    # if(len(delay_index)>0):
+    #     d_i = np.mean(delay_index)
+    # else:
+    #     d_i = -1
+    #
+    # last_d_i = np.mean(list(delay_index_temp.values()))
+    # eval_end = time.time()
+    # logger.info("scoring cost {}s".format(eval_end-eval_start))
+    return tot_v,  d_i
 
-                # process delay index
-                delay_index_list, vehicle_list, vehicles = process_delay_index(lines, roads, step)
-                result[step]['vehicle_list'] = vehicle_list
-                result[step]['delay_index'] = delay_index_list
-                result[step]['vehicles'] = vehicles
-
-
-    steps = list(result.keys())
-    steps.sort()
-    for step in steps:
-        for vehicle in result[step]['vehicles'].keys():
-            vehicle_last_occur[vehicle] = result[step]['vehicles'][vehicle]
-
-    delay_index_temp = {}
-    for vehicle in vehicle_last_occur.keys():
-        res = vehicle_last_occur[vehicle]['delay_index']
-        delay_index_temp[vehicle] = res
-
-    # calc
-    vehicle_total_set = set()
-    delay_index = []
-    for k, v in result.items():
-        vehicle_total_set = vehicle_total_set | set(v['vehicle_list'])
-        delay_index += delay_index_list
-
-    if(len(delay_index)>0):
-        d_i = np.mean(delay_index)
-    else:
-        d_i = -1
-
-    last_d_i = np.mean(list(delay_index_temp.values()))
-    eval_end = time.time()
-    logger.info("scoring cost {}s".format(eval_end-eval_start))
-    return len(vehicle_total_set),  last_d_i
-
-
-
-# def write_result(result, output_path):
-#     score_line = "{}: {:.4f}\n{}: {:.4f}".format('total_served_vehicles', score[0],
-#                                                  'delay_index', score[1])
-#     logger.info('Writing "{}"'.format(score_line))
-#     with open(output_path, "w+") as output_file:
-#         output_file.write(score_line + "\n")
-#
 
 def format_exception(grep_word):
     exception_list = traceback.format_stack()
@@ -532,7 +557,7 @@ def format_exception(grep_word):
     return exception_str
 
 if __name__ == "__main__":
-
+    # arg parse
     parser = argparse.ArgumentParser(
         prog="evaluation",
         description="1"
@@ -560,18 +585,24 @@ if __name__ == "__main__":
         default=None,
         type=str
     )
+
     parser.add_argument(
         "--metric_period",
         help="period of scoring",
         default=3600,
         type=int
     )
-    # Add more argument for training.
+    parser.add_argument(
+        "--threshold",
+        help="period of scoring",
+        default=1.6,
+        type=float
+    )
 
     parser.add_argument('--thread', type=int, default=8, help='number of threads')
     parser.add_argument('--steps', type=int, default=360, help='number of steps')
     parser.add_argument('--action_interval', type=int, default=2, help='how often agent make decisions')
-    parser.add_argument('--episodes', type=int, default=100, help='training episodes')
+    parser.add_argument('--episodes', type=int, default=2, help='training episodes')
     parser.add_argument('--save_model', action="store_true", default=False)
     parser.add_argument('--load_model', action="store_true", default=False)
     parser.add_argument("--save_rate", type=int, default=5,
@@ -580,6 +611,7 @@ if __name__ == "__main__":
                         help='directory in which model should be saved')
     parser.add_argument('--log_dir', type=str, default="cmd_log/presslight_1234", help='directory in which logs should be saved')
 
+    # result to be written in out/result.json
     result = {
         "success": False,
         "error_msg": "",
@@ -588,21 +620,12 @@ if __name__ == "__main__":
             "delay_index": -1
         }
     }
+
     args = parser.parse_args()
-    metric_period = args.metric_period
-    if not os.path.exists(args.log_dir):
-        os.makedirs(args.log_dir)
-    logger = logging.getLogger('main')
-    logger.setLevel(logging.DEBUG)
-    fh = logging.FileHandler(os.path.join(args.log_dir, datetime.now().strftime('%Y%m%d-%H%M%S') + ".log"))
-    fh.setLevel(logging.DEBUG)
-    sh = logging.StreamHandler()
-    sh.setLevel(logging.INFO)
-    logger.addHandler(fh)
-    logger.addHandler(sh)
-
     msg = None
-
+    metric_period = args.metric_period
+    threshold = args.threshold
+    # get input and output directory
     simulator_cfg_file = args.sim_cfg
     try:
         submission_dir, scores_dir = resolve_dirs(
@@ -611,37 +634,41 @@ if __name__ == "__main__":
     except Exception as e:
         msg = format_exception(e)
         result['error_msg'] = msg
-        json.dump(result,open(scores_dir / "scores.json",'w'),indent=2)
+        json.dump(result, open(scores_dir / "scores.json", 'w'), indent=2)
         raise AssertionError()
-    # submission_dir, eval_scenarios_dir, scores_dir = Path("submit"), Path("../scenarios"), Path("output")
+
+    # get agent and configuration of gym
     try:
-        agent_spec,gym_cfg = load_agent_submission(submission_dir)
+        agent_spec, gym_cfg = load_agent_submission(submission_dir)
     except Exception as e:
         msg = format_exception(e)
         result['error_msg'] = msg
-        json.dump(result,open(scores_dir / "scores.json",'w'),indent=2)
+        json.dump(result, open(scores_dir / "scores.json", 'w'), indent=2)
         raise AssertionError()
 
     logger.info(f"Loaded user agent instance={agent_spec}")
 
+    # simulation
     start_time = time.time()
     try:
-        # train(agent_spec, simulator_cfg_file, gym_cfg,metric_period)
-        scores = run_simulation(agent_spec, simulator_cfg_file, gym_cfg,metric_period,scores_dir)
+        train(agent_spec, simulator_cfg_file, gym_cfg, metric_period)
+        scores = run_simulation(agent_spec, simulator_cfg_file, gym_cfg, metric_period, scores_dir, threshold)
     except Exception as e:
         msg = format_exception(e)
         result['error_msg'] = msg
-        json.dump(result,open(scores_dir / "scores.json",'w'),indent=2)
+        json.dump(result, open(scores_dir / "scores.json", 'w'), indent=2)
         raise AssertionError()
 
+    # write result
     result['data']['total_served_vehicles'] = scores[0]
     result['data']['delay_index'] = scores[1]
+    # result['data']['last_d_i'] = scores[2]
     result['success'] = True
 
     # cal time
     end_time = time.time()
 
-    logger.info(f"total evaluation cost {end_time-start_time} s")
+    logger.info(f"total evaluation cost {end_time - start_time} s")
 
     # write score
     logger.info("\n\n")

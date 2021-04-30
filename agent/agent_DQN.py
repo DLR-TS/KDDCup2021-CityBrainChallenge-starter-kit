@@ -62,8 +62,8 @@ class TestAgent():
         self.model = self._build_model()
 
         # Remember to uncomment the following lines when submitting, and submit your model file as well.
-        path = os.path.split(os.path.realpath(__file__))[0]
-        self.load_model(path, 99)
+        # path = os.path.split(os.path.realpath(__file__))[0]
+        # self.load_model(path, 99)
 
         self.target_model = self._build_model()
         self.update_target_network()
