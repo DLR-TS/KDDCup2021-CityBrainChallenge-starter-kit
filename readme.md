@@ -8,6 +8,12 @@
 4. Run `docker run -it -p 3000:3000 -v $PWD:/starter-kit kdd bash`
 5. Now you are inside the docker environment. Try `cd starter-kit; python3 evaluate.py --input_dir agent --output_dir out --sim_cfg cfg/simulator.cfg`
 
+## Testing visualization
+1.  `cd ui/src`
+2.  Edit index.js and add the mapbox token
+3.  `yarn; yarn start`
+4.  Open http://localhost:3000 in your web browser
+
 ### FAQ
 
 1. 
