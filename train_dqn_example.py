@@ -90,7 +90,7 @@ def load_agent_submission(submission_dir: Path):
 
     # This will fail w/ an import error of the submissions directory does not exist
     import gym_cfg as gym_cfg_submission
-    import agent as agent_submission
+    import agent_DQN as agent_submission
 
     gym_cfg_instance = gym_cfg_submission.gym_cfg()
 
@@ -288,6 +288,8 @@ def train(agent_spec, simulator_cfg_file, gym_cfg,metric_period):
     total_decision_num = 0
     env.set_log(0)
     env.set_warning(0)
+    env.set_ui(0)
+    env.set_info(0)
     # agent.load_model(args.save_dir, 199)
 
     # The main loop
@@ -568,8 +570,8 @@ if __name__ == "__main__":
 
     parser.add_argument('--thread', type=int, default=8, help='number of threads')
     parser.add_argument('--steps', type=int, default=360, help='number of steps')
-    parser.add_argument('--action_interval', type=int, default=4, help='how often agent make decisions')
-    parser.add_argument('--episodes', type=int, default=2, help='training episodes')
+    parser.add_argument('--action_interval', type=int, default=2, help='how often agent make decisions')
+    parser.add_argument('--episodes', type=int, default=100, help='training episodes')
     parser.add_argument('--save_model', action="store_true", default=False)
     parser.add_argument('--load_model', action="store_true", default=False)
     parser.add_argument("--save_rate", type=int, default=5,
@@ -624,7 +626,7 @@ if __name__ == "__main__":
 
     start_time = time.time()
     try:
-        train(agent_spec, simulator_cfg_file, gym_cfg,metric_period)
+        # train(agent_spec, simulator_cfg_file, gym_cfg,metric_period)
         scores = run_simulation(agent_spec, simulator_cfg_file, gym_cfg,metric_period,scores_dir)
     except Exception as e:
         msg = format_exception(e)
