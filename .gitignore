@@ -4,3 +4,13 @@ log/*.json
 out/*.json
 .idea
 .gradle
+ui/node_modules
+ui/src/history
+ui/src/log/*.json
+/log_5_6_8_10/
+/log_5_8_10_12/
+/log_5_9_10_11/
+/log_5_10_12_14/
+/out_5_6_8_10/
+/out_5_8_10_12/
+/out_5_9_10_11/
