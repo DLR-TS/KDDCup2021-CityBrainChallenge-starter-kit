@@ -31,6 +31,7 @@ from keras.models import Model
 
 # contains all of the intersections
 
+
 class TestAgent():
     def __init__(self):
 
@@ -56,14 +57,14 @@ class TestAgent():
         self.learning_rate = 0.005
         self.batch_size = 32
         self.ob_length = 24
-        self.action_space = 4
+
+        self.action_space = 8
 
         self.model = self._build_model()
 
         # Remember to uncomment the following lines when submitting, and submit your model file as well.
         # path = os.path.split(os.path.realpath(__file__))[0]
-        # self.load_model(path, 199)
-
+        # self.load_model(path, 99)
         self.target_model = self._build_model()
         self.update_target_network()
 
@@ -76,7 +77,27 @@ class TestAgent():
         self.agent_list = agent_list
         self.now_phase = dict.fromkeys(self.agent_list,1)
         self.last_change_step = dict.fromkeys(self.agent_list,0)
-
+    # intersections[key_id] = {
+    #     'have_signal': bool,
+    #     'end_roads': list of road_id. Roads that end at this intersection. The order is random.
+    #     'start_roads': list of road_id. Roads that start at this intersection. The order is random.
+    #     'lanes': list, contains the lane_id in. The order is explained in Docs.
+    # }
+    # roads[road_id] = {
+    #     'start_inter':int. Start intersection_id.
+    #     'end_inter':int. End intersection_id.
+    #     'length': float. Road length.
+    #     'speed_limit': float. Road speed limit.
+    #     'num_lanes': int. Number of lanes in this road.
+    #     'inverse_road':  Road_id of inverse_road.
+    #     'lanes': dict. roads[road_id]['lanes'][lane_id] = list of 3 int value. Contains the Steerability of lanes.
+    #               lane_id is road_id*100 + 0/1/2... For example, if road 9 have 3 lanes, then their id are 900, 901, 902
+    # }
+    # agents[agent_id] = list of length 8. contains the inroad0_id, inroad1_id, inroad2_id,inroad3_id, outroad0_id, outroad1_id, outroad2_id, outroad3_id
+    def load_roadnet(self,intersections, roads, agents):
+        self.intersections = intersections
+        self.roads = roads
+        self.agents = agents
     ################################
 
     def act_(self, observations_for_agent):
@@ -90,16 +111,11 @@ class TestAgent():
         return actions
 
     def act(self, obs):
-        """ !!! MUST BE OVERRIDED !!!
-        """
-        # here obs contains all of the observations and infos
         observations = obs['observations']
         info = obs['info']
         actions = {}
 
-
-        # preprocess observations
-        # a simple fixtime agent
+        # Get state
         observations_for_agent = {}
         for key,val in observations.items():
             observations_agent_id = int(key.split('_')[0])
@@ -108,18 +124,11 @@ class TestAgent():
                 observations_for_agent[observations_agent_id] = {}
             observations_for_agent[observations_agent_id][observations_feature] = val[1:]
 
+        # Get actions
         for agent in self.agent_list:
-            # select the now_step
-            for k,v in observations_for_agent[agent].items():
-                now_step = v[0]
-                break
-            step_diff = now_step - self.last_change_step[agent]
-            if(step_diff >= self.green_sec):
-                self.now_phase[agent] = self.now_phase[agent] % self.max_phase + 1
-                self.last_change_step[agent] = now_step
-
             self.epsilon = 0
-            actions[agent] = self.get_action(observations_for_agent[agent]['lane_vehicle_num'])
+            actions[agent] = self.get_action(observations_for_agent[agent]['lane_vehicle_num']) + 1
+
         return actions
 
     def get_action(self, ob):
@@ -178,14 +187,14 @@ class TestAgent():
         if self.epsilon > self.epsilon_min:
             self.epsilon *= self.epsilon_decay
 
-    def load_model(self, dir="model/presslight", step=0):
-        name = "presslight_agent_{}.h5".format(step)
+    def load_model(self, dir="model/dqn", step=0):
+        name = "dqn_agent_{}.h5".format(step)
         model_name = os.path.join(dir, name)
         print("load from " + model_name)
         self.model.load_weights(model_name)
 
-    def save_model(self, dir="model/presslight", step=0):
-        name = "presslight_agent_{}.h5".format(step)
+    def save_model(self, dir="model/dqn", step=0):
+        name = "dqn_agent_{}.h5".format(step)
         model_name = os.path.join(dir, name)
         self.model.save_weights(model_name)
 
