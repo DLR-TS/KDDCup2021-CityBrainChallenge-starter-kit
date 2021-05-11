@@ -6,6 +6,7 @@ out/*.json
 .gradle
 ui/node_modules
 ui/src/history
+ui/src/index.js
 ui/src/log/*.json
 /log_5_6_8_10/
 /log_5_8_10_12/
