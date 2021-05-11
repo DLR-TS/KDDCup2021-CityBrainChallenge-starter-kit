@@ -18,6 +18,7 @@ class TestAgent():
     def __init__(self):
         self.now_phase = {}
         self.green_sec = 40
+        self.green_sec_max = 180
         self.max_phase = 4
         self.last_change_step = {}
         self.agent_list = []
@@ -61,7 +62,7 @@ class TestAgent():
         for lane in PHASE_LANES[phase]:
             n += max(0, numVehs[lane])
         headway = 2.0
-        return headway * n
+        return min(headway * n, self.green_sec_max)
 
 
     def act(self, obs):
