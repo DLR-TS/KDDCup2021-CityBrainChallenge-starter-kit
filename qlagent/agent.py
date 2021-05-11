@@ -1,11 +1,24 @@
 import os
 import sys
 
+
+PHASE_LANES = {
+        1 : [ 1,  7],
+        2 : [ 2,  8],
+        3 : [ 4, 10],
+        4 : [ 5, 11],
+        5 : [ 1,  2],
+        6 : [ 4,  5],
+        7 : [ 7,  8],
+        8 : [10, 11],
+        }
+
+
 class TestAgent():
     def __init__(self):
         self.now_phase = {}
         self.green_sec = 40
-        self.max_phase = 8
+        self.max_phase = 4
         self.last_change_step = {}
         self.agent_list = []
         self.phase_passablelane = {}
@@ -43,6 +56,13 @@ class TestAgent():
         self.agents = agents
     ################################
 
+    def get_green_sec(self, phase, numVehs):
+        n = 0
+        for lane in PHASE_LANES[phase]:
+            n += max(0, numVehs[lane])
+        headway = 2.0
+        return headway * n
+
 
     def act(self, obs):
         """ !!! MUST BE OVERRIDED !!!
@@ -53,7 +73,7 @@ class TestAgent():
         # info is returned 'info' of env.step()
         observations = obs['observations']
         info = obs['info']
-        print(obs)
+        #print(obs)
         actions = {}
 
         # a simple fixtime agent
@@ -75,8 +95,22 @@ class TestAgent():
                 break
             step_diff = now_step - self.last_change_step[agent]
             if(step_diff >= self.green_sec):
-                self.now_phase[agent] = self.now_phase[agent] % self.max_phase + 1
                 self.last_change_step[agent] = now_step
+                oldPhase = self.now_phase[agent]
+                newPhase = oldPhase % self.max_phase + 1 # 1-based phases
+                while newPhase != oldPhase:
+                    numVehs = observations_for_agent[agent]['lane_vehicle_num']
+                    green = self.get_green_sec(newPhase, numVehs)
+                    if green > 0:
+                        self.green_sec = green
+                        break
+                    # skip phase
+                    newPhase = newPhase % self.max_phase + 1 # 1-based phases
+                if newPhase == oldPhase:
+                    self.green_sec = 10
+                self.now_phase[agent] = newPhase
+                print(now_step, "agent", agent, "phase", newPhase, "duration", self.green_sec)
+
 
 
             actions[agent] = self.now_phase[agent]
