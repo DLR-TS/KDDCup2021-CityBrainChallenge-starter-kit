@@ -125,12 +125,15 @@ class TestAgent():
             queue_lengths.sort(reverse=True)
             length, newPhase = queue_lengths[0]
             oldPhase = self.now_phase[agent]
+            if step_diff > self.green_sec_max and newPhase == oldPhase:
+                length, newPhase = queue_lengths[1]
+                #print(now_step, agent, "oldPhase", oldPhase, "maxDuration, newPhase", newPhase)
             self.now_phase[agent] = newPhase
             #print(now_step, agent, queue_lengths, newPhase)
             if newPhase != oldPhase:
                 self.last_change_step[agent] = now_step
                 actions[agent] = self.now_phase[agent]
-                print(now_step, agent, newPhase)
+                #print(now_step, agent, newPhase)
 
         # print(self.intersections,self.roads,self.agents)
         #print(now_step, actions)
