@@ -1,4 +1,5 @@
 agent/__pycache__
+qlagent/__pycache__
 log/*.log
 log/*.json
 out/*.json

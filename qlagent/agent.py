@@ -1,5 +1,6 @@
 import os
 import sys
+from collections import defaultdict
 
 
 PHASE_LANES = {
@@ -57,12 +58,28 @@ class TestAgent():
         self.agents = agents
     ################################
 
-    def get_green_sec(self, phase, numVehs):
-        n = 0
-        for lane in PHASE_LANES[phase]:
-            n += max(0, numVehs[lane])
-        headway = 2.0
-        return min(headway * n, self.green_sec_max)
+    def get_queue_lengths(self, agent, phase, laneVehs):
+        result = 0
+        # count vehicles that are "slow" or that can reach the intersection
+        # within the next 10s
+        for index in PHASE_LANES[phase]:
+            vehs = []
+            lane = self.intersections[agent]['lanes'][index - 1]
+            if lane == -1:
+                continue
+            road = int(lane / 100)
+            speedLimit = self.roads[road]['speed_limit']
+            length = self.roads[road]['length']
+            for veh, vehData in laneVehs[lane]:
+                lastEdge = vehData['route'][-1]
+                if road != lastEdge:
+                    speed = vehData['speed'][0]
+                    stoplineDist = length - vehData['distance'][0]
+                    if (speed < 0.5 * speedLimit) or (stoplineDist / speedLimit < 10):
+                        result += 1
+                        vehs.append(veh)
+            #print(phase, index, lane, vehs)
+        return result
 
 
     def act(self, obs):
@@ -88,6 +105,11 @@ class TestAgent():
                 observations_for_agent[observations_agent_id] = {}
             observations_for_agent[observations_agent_id][observations_feature] = val
 
+        laneVehs = defaultdict(list) # lane -> (veh, vehData)
+        for veh, vehData in info.items():
+            laneVehs[vehData['drivable'][0]].append((veh, vehData))
+
+
         # get actions
         for agent in self.agent_list:
             # select the now_step
@@ -95,27 +117,23 @@ class TestAgent():
                 now_step = v[0]
                 break
             step_diff = now_step - self.last_change_step[agent]
-            if(step_diff >= self.green_sec):
+
+            #numVehs = observations_for_agent[agent]['lane_vehicle_num']
+            #vehSpeeds = observations_for_agent[agent]['lane_speed']
+
+            queue_lengths = [(self.get_queue_lengths(agent, p, laneVehs), p) for p in range(1,9)]
+            queue_lengths.sort(reverse=True)
+            length, newPhase = queue_lengths[0]
+            oldPhase = self.now_phase[agent]
+            self.now_phase[agent] = newPhase
+            #print(now_step, agent, queue_lengths, newPhase)
+            if newPhase != oldPhase:
                 self.last_change_step[agent] = now_step
-                oldPhase = self.now_phase[agent]
-                newPhase = oldPhase % self.max_phase + 1 # 1-based phases
-                while newPhase != oldPhase:
-                    numVehs = observations_for_agent[agent]['lane_vehicle_num']
-                    green = self.get_green_sec(newPhase, numVehs)
-                    if green > 0:
-                        self.green_sec = green
-                        break
-                    # skip phase
-                    newPhase = newPhase % self.max_phase + 1 # 1-based phases
-                if newPhase == oldPhase:
-                    self.green_sec = 10
-                self.now_phase[agent] = newPhase
-                print(now_step, "agent", agent, "phase", newPhase, "duration", self.green_sec)
+                actions[agent] = self.now_phase[agent]
+                print(now_step, agent, newPhase)
 
-
-
-            actions[agent] = self.now_phase[agent]
         # print(self.intersections,self.roads,self.agents)
+        #print(now_step, actions)
         return actions
 
 scenario_dirs = [

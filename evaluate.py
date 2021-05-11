@@ -329,6 +329,7 @@ def run_simulation(agent_spec, simulator_cfg_file, gym_cfg,metric_period,scores_
         if(step * 10 % metric_period == 0):
             try:
                 tot_v , d_i = process_score(log_path,roads,step*10-1,scores_dir)
+                print(step, "di", d_i, "tot_v", tot_v)
             except Exception as e:
                 print(e)
                 print('Error in process_score. Maybe no log')
@@ -448,7 +449,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--metric_period",
         help="period of scoring",
-        default=3600,
+        default=200,
         type=int
     )
     parser.add_argument(
