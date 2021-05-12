@@ -29,8 +29,24 @@ DEST_LANES = {
        12 : [19, 20, 21],
         }
 
+PRED_LANES = {
+       13 : [ 6,  8, 10],
+       14 : [ 6,  8, 10],
+       15 : [ 6,  8, 10],
+       16 : [ 9, 11,  1],
+       17 : [ 9, 11,  1],
+       18 : [ 9, 11,  1],
+       19 : [12,  2,  4],
+       20 : [12,  2,  4],
+       21 : [12,  2,  4],
+       22 : [ 3,  5,  7],
+       23 : [ 3,  5,  7],
+       24 : [ 3,  5,  7],
+        }
+
 VEH_LENGTH = 5.0
 HEADWAY = 2.0
+MIN_CHECK_LENGTH = 100
 
 
 class TestAgent():
@@ -98,6 +114,7 @@ class TestAgent():
             dstLane0 = self.intersections[agent]['lanes'][DEST_LANES[index][0] - 1]
             if dstLane0 == -1:
                 continue
+
             hasDestRoad = True
             dstRoad = int(dstLane0 / 100)
             dstLength = self.roads[dstRoad]['length']
@@ -126,6 +143,46 @@ class TestAgent():
                         result += 1
                         laneQ += 1
                         vehs.append(veh)
+
+            if length < MIN_CHECK_LENGTH:
+                # extend queue upstream
+                fromNode = self.roads[road]['start_inter']
+                upstreamLanes = self.intersections[fromNode]['lanes']
+                signalized = self.intersections[fromNode]['have_signal']
+
+                predLanes = []
+                # only signalized nodes define 'lanes'
+                if len(upstreamLanes) > 0 and False:
+                    assert(lane in upstreamLanes)
+                    outIndex = upstreamLanes.index(lane) + 1 # 1-based
+                    for predIndex in PRED_LANES[outIndex]:
+                        predLane = upstreamLanes[predIndex - 1]
+                        if predLane >= 0:
+                            predLanes.append(predLane)
+                if not signalized:
+                    for predRoad in self.intersections[fromNode]['end_roads']:
+                        # ignore turnaround
+                        if predRoad >= 0 and self.roads[predRoad]['start_inter'] != agent:
+                            # add straight connected lane
+                            predLanes.append(predRoad * 100 + 1)
+
+                for predLane in predLanes:
+                    predRoad = int(predLane / 100)
+                    predLength = self.roads[predRoad]['length']
+                    for veh, vehData in laneVehs[predLane]:
+                        lastEdge = vehData['route'][-1]
+                        if predRoad != lastEdge:
+                            speed = vehData['speed'][0]
+                            stoplineDist = length + predLength - vehData['distance'][0]
+                            if (speed < 0.5 * speedLimit) or (stoplineDist / speedLimit < 10):
+                                result += 1
+                                laneQ += 1
+                                vehs.append(veh)
+                                print("%s adding pred phase=%s index=%s lane=%s len=%s predRoad=%s predVeh=%s" % (
+                                    agent, phase, index, lane, length, predRoad, veh))
+
+
+
             #print(phase, index, lane, vehs)
             maxLaneQ = max(laneQ, maxLaneQ)
 
