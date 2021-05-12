@@ -64,6 +64,8 @@ class TestAgent():
         self.roads = {}
         self.agents = {}
         self.agentFiles = {}
+        # lane -> bonus
+        self.jammed_lanes = defaultdict(lambda : 0)
     ################################
     # don't modify this function.
     # agent_list is a list of agent_id
@@ -95,7 +97,7 @@ class TestAgent():
         self.agents = agents
     ################################
 
-    def get_queue_lengths(self, agent, phase, laneVehs):
+    def get_queue_lengths(self, now_step, agent, phase, laneVehs):
         """return total queue length and maximum lane queue length"""
 
         result = 0
@@ -132,7 +134,7 @@ class TestAgent():
             dstRelSpeed = (dstSpeed / dstSum) / dstSpeedLimit if dstSum > 0 else 1.0
 
             # road is full and slow
-            if dstSum * VEH_LENGTH > dstLength * 3. * JAM_THRESH and dstRelSpeed < 0.1:
+            if dstSum * VEH_LENGTH > dstLength * JAM_THRESH and dstRelSpeed < 0.1:
                 print("%s ignoring queue phase=%s index=%s lane=%s targetRoad=%s len=%s targetVehs=%s, dstSpeed=%s, dstRelSpeed=%s" % (
                     agent, phase, index, lane, dstRoad, dstLength, dstSum, dstSpeed, dstRelSpeed))
                 continue
@@ -210,7 +212,6 @@ class TestAgent():
         for veh, vehData in info.items():
             laneVehs[vehData['drivable'][0]].append((veh, vehData))
 
-
         # get actions
         for agent in self.agent_list:
             if self.agentFiles.get(agent) is None:
@@ -225,7 +226,7 @@ class TestAgent():
 
             oldPhase = self.now_phase[agent]
             newPhase = oldPhase
-            queue_lengths = list([(self.get_queue_lengths(agent, p, laneVehs), p) for p in range(1,9)])
+            queue_lengths = list([(self.get_queue_lengths(now_step, agent, p, laneVehs), p) for p in range(1,9)])
             assert(queue_lengths[oldPhase - 1][1] == oldPhase)
             currLength, maxLaneQ = queue_lengths[oldPhase - 1][0]
             queue_lengths.sort(reverse=True)
