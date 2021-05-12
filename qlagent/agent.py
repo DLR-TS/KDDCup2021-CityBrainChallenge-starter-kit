@@ -97,14 +97,19 @@ class TestAgent():
             dstRoad = int(dstLane0 / 100)
             dstLength = self.roads[dstRoad]['length']
             dstSum = 0
+            dstSpeed = 0
+            dstSpeedLimit = self.roads[dstRoad]['speed_limit']
             for dstIndex in DEST_LANES[index]:
                 dstLane = self.intersections[agent]['lanes'][dstIndex - 1]
                 dstSum += len(laneVehs[dstLane])
+                for veh, vehData in laneVehs[dstLane]:
+                    dstSpeed += vehData['speed'][0]
+            dstRelSpeed = (dstSpeed / dstSum) / dstSpeedLimit if dstSum > 0 else 1.0
 
-            # road is half full
-            if dstSum * VEH_LENGTH > dstLength * 3 / 1.5:
-                print("%s ignoring queue phase=%s index=%s lane=%s targetRoad=%s len=%s targetVehs=%s" % (
-                    agent, phase, index, lane, dstRoad, dstLength, dstSum))
+            # road is more than 66% full and slow
+            if dstSum * VEH_LENGTH > dstLength * 3 / 1.5 and dstRelSpeed < 0.1:
+                print("%s ignoring queue phase=%s index=%s lane=%s targetRoad=%s len=%s targetVehs=%s, dstSpeed=%s, dstRelSpeed=%s" % (
+                    agent, phase, index, lane, dstRoad, dstLength, dstSum, dstSpeed, dstRelSpeed))
                 continue
 
             for veh, vehData in laneVehs[lane]:
