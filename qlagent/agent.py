@@ -228,12 +228,12 @@ class TestAgent():
             queue_lengths = list([(self.get_queue_lengths(agent, p, laneVehs), p) for p in range(1,9)])
             assert(queue_lengths[oldPhase - 1][1] == oldPhase)
             currLength, maxLaneQ = queue_lengths[oldPhase - 1][0]
+            queue_lengths.sort(reverse=True)
             if maxLaneQ * HEADWAY > 10:
                 # keep current phase
                 if agent == DEBUGID:
                     print(now_step, agent, "keep oldPhase", oldPhase)
             else:
-                queue_lengths.sort(reverse=True)
                 length, newPhase = queue_lengths[0]
 
             if step_diff > self.green_sec_max:
