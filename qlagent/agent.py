@@ -30,6 +30,7 @@ DEST_LANES = {
         }
 
 VEH_LENGTH = 5.0
+HEADWAY = 2.0
 
 
 class TestAgent():
@@ -76,12 +77,16 @@ class TestAgent():
     ################################
 
     def get_queue_lengths(self, agent, phase, laneVehs):
+        """return total queue length and maximum lane queue length"""
+
         result = 0
+        maxLaneQ = 0
         # count vehicles that are "slow" or that can reach the intersection
         # within the next 10s
         hasRoad = False
         hasDestRoad = False
         for index in PHASE_LANES[phase]:
+            laneQ = 0
             vehs = []
             lane = self.intersections[agent]['lanes'][index - 1]
             if lane == -1:
@@ -119,12 +124,15 @@ class TestAgent():
                     stoplineDist = length - vehData['distance'][0]
                     if (speed < 0.5 * speedLimit) or (stoplineDist / speedLimit < 10):
                         result += 1
+                        laneQ += 1
                         vehs.append(veh)
             #print(phase, index, lane, vehs)
+            maxLaneQ = max(laneQ, maxLaneQ)
+
         if hasRoad and hasDestRoad:
-            return result
+            return result, maxLaneQ
         else:
-            return -1
+            return -1, -1
 
 
     def act(self, obs):
@@ -175,14 +183,27 @@ class TestAgent():
 
             DEBUGID = None # 42381408549
 
-            queue_lengths = [(self.get_queue_lengths(agent, p, laneVehs), p) for p in range(1,9)]
-            queue_lengths.sort(reverse=True)
-            length, newPhase = queue_lengths[0]
             oldPhase = self.now_phase[agent]
-            if step_diff > self.green_sec_max and newPhase == oldPhase:
-                length, newPhase = queue_lengths[1]
+            newPhase = oldPhase
+            queue_lengths = list([(self.get_queue_lengths(agent, p, laneVehs), p) for p in range(1,9)])
+            assert(queue_lengths[oldPhase - 1][1] == oldPhase)
+            currLength, maxLaneQ = queue_lengths[oldPhase - 1][0]
+            if maxLaneQ * HEADWAY > 10:
+                # keep current phase
+                if agent == DEBUGID:
+                    print(now_step, agent, "keep oldPhase", oldPhase)
+            else:
+                queue_lengths.sort(reverse=True)
+                length, newPhase = queue_lengths[0]
+
+            if step_diff > self.green_sec_max:
+                nextBest = 0
+                while newPhase == oldPhase:
+                    length, newPhase = queue_lengths[nextBest]
+                    nextBest += 1
                 if agent == DEBUGID:
                     print(now_step, agent, "oldPhase", oldPhase, "maxDuration, newPhase", newPhase)
+
             self.now_phase[agent] = newPhase
             if agent == DEBUGID:
                 print(now_step, agent, queue_lengths, newPhase)
