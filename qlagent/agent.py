@@ -14,6 +14,23 @@ PHASE_LANES = {
         8 : [10, 11],
         }
 
+DEST_LANES = {
+        1 : [16, 17, 18],
+        2 : [19, 20, 21],
+        3 : [22, 23, 24],
+        4 : [19, 20, 21],
+        5 : [22, 23, 24],
+        6 : [13, 14, 15],
+        7 : [22, 23, 24],
+        8 : [13, 14, 15],
+        9 : [16, 17, 18],
+       10 : [13, 14, 15],
+       11 : [16, 17, 18],
+       12 : [19, 20, 21],
+        }
+
+VEH_LENGTH = 5.0
+
 
 class TestAgent():
     def __init__(self):
@@ -62,14 +79,34 @@ class TestAgent():
         result = 0
         # count vehicles that are "slow" or that can reach the intersection
         # within the next 10s
+        hasRoad = False
+        hasDestRoad = False
         for index in PHASE_LANES[phase]:
             vehs = []
             lane = self.intersections[agent]['lanes'][index - 1]
             if lane == -1:
                 continue
+            hasRoad = True
             road = int(lane / 100)
             speedLimit = self.roads[road]['speed_limit']
             length = self.roads[road]['length']
+            dstLane0 = self.intersections[agent]['lanes'][DEST_LANES[index][0] - 1]
+            if dstLane0 == -1:
+                continue
+            hasDestRoad = True
+            dstRoad = int(dstLane0 / 100)
+            dstLength = self.roads[dstRoad]['length']
+            dstSum = 0
+            for dstIndex in DEST_LANES[index]:
+                dstLane = self.intersections[agent]['lanes'][dstIndex - 1]
+                dstSum += len(laneVehs[dstLane])
+
+            # road is half full
+            if dstSum * VEH_LENGTH > dstLength * 3 / 1.5:
+                print("%s ignoring queue phase=%s index=%s lane=%s targetRoad=%s len=%s targetVehs=%s" % (
+                    agent, phase, index, lane, dstRoad, dstLength, dstSum))
+                continue
+
             for veh, vehData in laneVehs[lane]:
                 lastEdge = vehData['route'][-1]
                 if road != lastEdge:
@@ -79,10 +116,21 @@ class TestAgent():
                         result += 1
                         vehs.append(veh)
             #print(phase, index, lane, vehs)
-        return result
+        if hasRoad and hasDestRoad:
+            return result
+        else:
+            return -1
 
 
     def act(self, obs):
+
+        #print(self.intersections['12372852614']['lanes'])
+        #for junctionID in self.intersections:
+        #    print(junctionID, self.intersections[junctionID]['lanes'])
+        #sys.exit()
+
+
+
         """ !!! MUST BE OVERRIDED !!!
         """
         # here obs contains all of the observations and infos
@@ -94,7 +142,6 @@ class TestAgent():
         #print(obs)
         actions = {}
 
-        # a simple fixtime agent
 
         # preprocess observations
         observations_for_agent = {}
@@ -121,19 +168,24 @@ class TestAgent():
             #numVehs = observations_for_agent[agent]['lane_vehicle_num']
             #vehSpeeds = observations_for_agent[agent]['lane_speed']
 
+            DEBUGID = None # 42381408549
+
             queue_lengths = [(self.get_queue_lengths(agent, p, laneVehs), p) for p in range(1,9)]
             queue_lengths.sort(reverse=True)
             length, newPhase = queue_lengths[0]
             oldPhase = self.now_phase[agent]
             if step_diff > self.green_sec_max and newPhase == oldPhase:
                 length, newPhase = queue_lengths[1]
-                #print(now_step, agent, "oldPhase", oldPhase, "maxDuration, newPhase", newPhase)
+                if agent == DEBUGID:
+                    print(now_step, agent, "oldPhase", oldPhase, "maxDuration, newPhase", newPhase)
             self.now_phase[agent] = newPhase
-            #print(now_step, agent, queue_lengths, newPhase)
+            if agent == DEBUGID:
+                print(now_step, agent, queue_lengths, newPhase)
             if newPhase != oldPhase:
                 self.last_change_step[agent] = now_step
                 actions[agent] = self.now_phase[agent]
-                #print(now_step, agent, newPhase)
+                if agent == DEBUGID:
+                    print(now_step, agent, newPhase)
 
         # print(self.intersections,self.roads,self.agents)
         #print(now_step, actions)
