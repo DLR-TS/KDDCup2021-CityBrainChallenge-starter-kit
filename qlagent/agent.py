@@ -239,6 +239,7 @@ class TestAgent():
                 if not os.path.isdir('custom_output'):
                     os.makedirs('custom_output')
                 self.agentFiles[agent] = open('custom_output/%s.txt' % agent, 'w')
+                self.agentFiles[agent].write('#lanes: %s\n' % self.intersections[agent]['lanes'])
                 self.agentFiles[agent].write('#step oldPhase duration newPhase queueLengths\n')
 
             step_diff = now_step - self.last_change_step[agent]
