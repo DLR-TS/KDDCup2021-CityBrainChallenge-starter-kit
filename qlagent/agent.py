@@ -63,6 +63,7 @@ class TestAgent():
         self.intersections = {}
         self.roads = {}
         self.agents = {}
+        self.agentFiles = {}
     ################################
     # don't modify this function.
     # agent_list is a list of agent_id
@@ -180,8 +181,8 @@ class TestAgent():
                                 result += 1
                                 laneQ += 1
                                 vehs.append(veh)
-                                print("%s adding pred phase=%s index=%s lane=%s len=%s predRoad=%s predVeh=%s" % (
-                                    agent, phase, index, lane, length, predRoad, veh))
+                                #print("%s adding pred phase=%s index=%s lane=%s len=%s predRoad=%s predVeh=%s" % (
+                                #    agent, phase, index, lane, length, predRoad, veh))
 
 
 
@@ -212,6 +213,12 @@ class TestAgent():
 
         # get actions
         for agent in self.agent_list:
+            if self.agentFiles.get(agent) is None:
+                if not os.path.isdir('custom_output'):
+                    os.makedirs('custom_output')
+                self.agentFiles[agent] = open('custom_output/%s.txt' % agent, 'w')
+                self.agentFiles[agent].write('#step oldPhase duration newPhase queueLengths\n')
+
             step_diff = now_step - self.last_change_step[agent]
 
             DEBUGID = None # 42381408549
@@ -241,10 +248,13 @@ class TestAgent():
             if agent == DEBUGID:
                 print(now_step, agent, queue_lengths, newPhase)
             if newPhase != oldPhase:
+                self.agentFiles[agent].write('%s %s %s %s %s\n' % (now_step, oldPhase, step_diff, newPhase, queue_lengths))
+                self.agentFiles[agent].flush()
                 self.last_change_step[agent] = now_step
                 actions[agent] = self.now_phase[agent]
                 if agent == DEBUGID:
                     print(now_step, agent, newPhase)
+
 
         # print(self.intersections,self.roads,self.agents)
         #print(now_step, actions)
