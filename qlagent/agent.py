@@ -49,6 +49,7 @@ HEADWAY = 2.0  # to be optimized
 SLOW_THRESH = 0.5  # at which relative speed a vehicle is considered slow, to be optimized
 JAM_THRESH  = 2./3. # at which relative occupancy a lane is considered jammed, to be optimized
 MIN_CHECK_LENGTH = 100
+JAM_BONUS = 5
 
 
 class TestAgent():
@@ -186,7 +187,8 @@ class TestAgent():
                                 #print("%s adding pred phase=%s index=%s lane=%s len=%s predRoad=%s predVeh=%s" % (
                                 #    agent, phase, index, lane, length, predRoad, veh))
 
-
+            # apply jam bonus (there might be more vehicles over the horizon
+            result += self.jammed_lanes[lane]
 
             #print(phase, index, lane, vehs)
             maxLaneQ = max(laneQ, maxLaneQ)
@@ -211,6 +213,25 @@ class TestAgent():
         laneVehs = defaultdict(list) # lane -> (veh, vehData)
         for veh, vehData in info.items():
             laneVehs[vehData['drivable'][0]].append((veh, vehData))
+
+        # detect jammed lanes
+        checked_lanes = set()
+        for agent in self.agent_list:
+            for lane in self.intersections[agent]['lanes']:
+                if lane >= 0 and lane not in checked_lanes:
+                    checked_lanes.add(lane)
+                    speedSum = 0
+                    numVehs = len(laneVehs[lane])
+                    for veh, vehData in laneVehs[lane]:
+                        speedSum += vehData['speed'][0]
+                    road = int(lane / 100)
+                    speedLimit = self.roads[road]['speed_limit']
+                    length = self.roads[road]['length']
+                    relSpeed = (speedSum / numVehs) / speedLimit if numVehs > 0 else 1.0
+                    # road is full and slow
+                    if numVehs * VEH_LENGTH > length * JAM_THRESH and relSpeed < 0.1:
+                        self.jammed_lanes[lane] += JAM_BONUS
+
 
         # get actions
         for agent in self.agent_list:
@@ -252,7 +273,14 @@ class TestAgent():
                 self.agentFiles[agent].write('%s %s %s %s %s\n' % (now_step, oldPhase, step_diff, newPhase, queue_lengths))
                 self.agentFiles[agent].flush()
                 self.last_change_step[agent] = now_step
+                # reset jam bonus
+                for index in PHASE_LANES[newPhase]:
+                    lane = self.intersections[agent]['lanes'][index - 1]
+                    self.jammed_lanes[lane] = 0
+
+                # result action
                 actions[agent] = self.now_phase[agent]
+
                 if agent == DEBUGID:
                     print(now_step, agent, newPhase)
 
