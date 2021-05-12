@@ -44,8 +44,10 @@ PRED_LANES = {
        24 : [ 3,  5,  7],
         }
 
-VEH_LENGTH = 5.0
-HEADWAY = 2.0
+VEH_LENGTH = 5.0  # length read from infos, should be valid, optimize JAM_THRESH instead
+HEADWAY = 2.0  # to be optimized
+SLOW_THRESH = 0.5  # at which relative speed a vehicle is considered slow, to be optimized
+JAM_THRESH  = 2./3. # at which relative occupancy a lane is considered jammed, to be optimized
 MIN_CHECK_LENGTH = 100
 
 
@@ -53,7 +55,7 @@ class TestAgent():
     def __init__(self):
         self.now_phase = {}
         self.green_sec = 40
-        self.green_sec_max = 180
+        self.green_sec_max = 180  # to be optimized
         self.max_phase = 4
         self.last_change_step = {}
         self.agent_list = []
@@ -128,8 +130,8 @@ class TestAgent():
                     dstSpeed += vehData['speed'][0]
             dstRelSpeed = (dstSpeed / dstSum) / dstSpeedLimit if dstSum > 0 else 1.0
 
-            # road is more than 66% full and slow
-            if dstSum * VEH_LENGTH > dstLength * 3 / 1.5 and dstRelSpeed < 0.1:
+            # road is full and slow
+            if dstSum * VEH_LENGTH > dstLength * 3. * JAM_THRESH and dstRelSpeed < 0.1:
                 print("%s ignoring queue phase=%s index=%s lane=%s targetRoad=%s len=%s targetVehs=%s, dstSpeed=%s, dstRelSpeed=%s" % (
                     agent, phase, index, lane, dstRoad, dstLength, dstSum, dstSpeed, dstRelSpeed))
                 continue
@@ -139,7 +141,7 @@ class TestAgent():
                 if road != lastEdge:
                     speed = vehData['speed'][0]
                     stoplineDist = length - vehData['distance'][0]
-                    if (speed < 0.5 * speedLimit) or (stoplineDist / speedLimit < 10):
+                    if (speed < SLOW_THRESH * speedLimit) or (stoplineDist / speedLimit < 10):
                         result += 1
                         laneQ += 1
                         vehs.append(veh)
