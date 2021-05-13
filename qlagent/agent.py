@@ -2,6 +2,9 @@ import os
 import sys
 from collections import defaultdict
 
+from gym_cfg import HEADWAY, SLOW_THRESH, JAM_THRESH, MIN_CHECK_LENGTH, JAM_BONUS, MAX_GREEN_SEC
+
+
 
 PHASE_LANES = {
         1 : [ 1,  7],
@@ -45,18 +48,12 @@ PRED_LANES = {
         }
 
 VEH_LENGTH = 5.0  # length read from infos, should be valid, optimize JAM_THRESH instead
-HEADWAY = 2.0  # to be optimized
-SLOW_THRESH = 0.5  # at which relative speed a vehicle is considered slow, to be optimized
-JAM_THRESH  = 2./3. # at which relative occupancy a lane is considered jammed, to be optimized
-MIN_CHECK_LENGTH = 100 # look upstream to find more queued vehicles if a lane is shorter than this
-JAM_BONUS = 5 # bonus vehicles to add to a jammed lane per act call (every 10s) until it gets green
 
 
 class TestAgent():
     def __init__(self):
         self.now_phase = {}
         self.green_sec = 40
-        self.green_sec_max = 180  # to be optimized
         self.max_phase = 4
         self.last_change_step = {}
         self.agent_list = []
@@ -259,7 +256,7 @@ class TestAgent():
             else:
                 length, newPhase = queue_lengths[0]
 
-            if step_diff > self.green_sec_max:
+            if step_diff > MAX_GREEN_SEC:
                 nextBest = 0
                 while newPhase == oldPhase:
                     length, newPhase = queue_lengths[nextBest]
