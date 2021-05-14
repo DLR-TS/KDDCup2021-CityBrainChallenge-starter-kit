@@ -122,28 +122,29 @@ class TestAgent():
             hasDestRoad = True
             dstRoad = int(dstLane0 / 100)
             dstLength = self.roads[dstRoad]['length']
-            dstSum = 0
-            dstSpeed = 0
             dstSpeedLimit = self.roads[dstRoad]['speed_limit']
+            dstLanesJammed = {}
             for dstIndex in DEST_LANES[index]:
+                dstSpeed = 0
                 dstLane = self.intersections[agent]['lanes'][dstIndex - 1]
-                dstSum += len(laneVehs[dstLane])
+                dstVehs = len(laneVehs[dstLane])
                 for veh, vehData in laneVehs[dstLane]:
                     dstSpeed += vehData['speed'][0]
-            dstRelSpeed = (dstSpeed / dstSum) / dstSpeedLimit if dstSum > 0 else 1.0
+                dstRelSpeed = (dstSpeed / dstVehs) / dstSpeedLimit if dstVehs > 0 else 1.0
+                if dstVehs * VEH_LENGTH >= dstLength * JAM_THRESH and dstRelSpeed < 0.1:
+                    # lane is full and slow
+                    dstLanesJammed[dstLane] = True
+                    #print("%s agent %s ignoring target lane %s dstVehs=%s, dstSpeed=%s, dstRelSpeed=%s" % (
+                    #    now_step, agent, dstLane, dstVehs, dstSpeed, dstRelSpeed))
 
-            # road is full and slow
-            if dstSum * VEH_LENGTH > dstLength * JAM_THRESH and dstRelSpeed < 0.1:
-                print("%s ignoring queue phase=%s index=%s lane=%s targetRoad=%s len=%s targetVehs=%s, dstSpeed=%s, dstRelSpeed=%s" % (
-                    agent, phase, index, lane, dstRoad, dstLength, dstSum, dstSpeed, dstRelSpeed))
-                continue
 
             for veh, vehData in laneVehs[lane]:
                 lastEdge = vehData['route'][-1]
                 if road != lastEdge:
                     speed = vehData['speed'][0]
                     stoplineDist = length - vehData['distance'][0]
-                    if (speed < SLOW_THRESH * speedLimit) or (stoplineDist / speedLimit < 10):
+                    if ((speed < SLOW_THRESH * speedLimit) or (stoplineDist / speedLimit < 10)
+                            and not self.targetLaneJammed(veh, vehData['route'], dstLanesJammed)):
                         laneQ += 1
                         vehs.append(veh)
 
@@ -199,6 +200,38 @@ class TestAgent():
             return dualFlow, totalFlow
         else:
             return -1, -1
+
+    def targetLaneJammed(self, veh, route, dstLanesJammed):
+        if len(dstLanesJammed) == 0:
+            return False
+        elif len(dstLanesJammed) == 3:
+            return True
+        elif len(route) == 1:
+            # route does not go past the junction
+            return False;
+        elif len(route) == 2:
+            # route ends after beyond the current junction
+            # all target lanes are permitted
+            allJammed = len(dstLanesJammed) == 3
+            return allJammed
+        else:
+            nextJunction = self.roads[route[1]]['end_inter']
+            nextLanes = self.intersections[nextJunction]['lanes']
+            if len(nextLanes) == 0:
+                # only signalized nodes define 'lanes'
+                # we already know that at least one lane is jammed so let's assume the worst
+                return True
+            for index in range(12):
+                inRoad = int(nextLanes[index] / 100)
+                # +1 / -1 to convert between zero-based and 1-based list indices
+                outRoad = int(nextLanes[DEST_LANES[index + 1][0] - 1] / 100)
+                if inRoad == route[1] and outRoad == route[2]:
+                    if nextLanes[index] in dstLanesJammed:
+                        #print("targetLaneJammed for veh %s with route %s, targetLane=%s inRoad=%s outRoad=%s" % (
+                        #    veh, route, nextLanes[index], inRoad, outRoad))
+                        return True
+            return False
+
 
     def act(self, obs):
         # observations is returned 'observation' of env.step()
