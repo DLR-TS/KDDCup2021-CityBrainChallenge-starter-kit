@@ -237,7 +237,7 @@ class TestAgent():
                     os.makedirs('custom_output')
                 self.agentFiles[agent] = open('custom_output/%s.txt' % agent, 'w')
                 self.agentFiles[agent].write('#lanes: %s\n' % self.intersections[agent]['lanes'])
-                self.agentFiles[agent].write('#step oldPhase duration newPhase queueLengths\n')
+                self.agentFiles[agent].write('#step oldPhase duration newPhase queueLengths jammedBonus\n')
 
             step_diff = now_step - self.last_change_step[agent]
 
@@ -268,7 +268,8 @@ class TestAgent():
             if agent == DEBUGID:
                 print(now_step, agent, queue_lengths, newPhase)
             if newPhase != oldPhase:
-                self.agentFiles[agent].write('%s %s %s %s %s\n' % (now_step, oldPhase, step_diff, newPhase, queue_lengths))
+                bonus = list([self.jammed_lanes[lane] for lane in self.intersections[agent]['lanes'][:12]])
+                self.agentFiles[agent].write('%s %s %s %s %s %s\n' % (now_step, oldPhase, step_diff, newPhase, queue_lengths, bonus))
                 self.agentFiles[agent].flush()
                 self.last_change_step[agent] = now_step
                 # reset jam bonus
