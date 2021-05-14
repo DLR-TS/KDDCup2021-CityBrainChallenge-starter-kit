@@ -2,7 +2,7 @@ import os
 import sys
 from collections import defaultdict
 
-from gym_cfg import HEADWAY, SLOW_THRESH, JAM_THRESH, MIN_CHECK_LENGTH, JAM_BONUS, MAX_GREEN_SEC, PREFER_DUAL_THRESHOLD
+from gym_cfg import HEADWAY, SLOW_THRESH, JAM_THRESH, MIN_CHECK_LENGTH, JAM_BONUS, MAX_GREEN_SEC, PREFER_DUAL_THRESHOLD, SPEED_THRESH, STOP_LINE_HEADWAY
 
 
 
@@ -131,7 +131,7 @@ class TestAgent():
                 for veh, vehData in laneVehs[dstLane]:
                     dstSpeed += vehData['speed'][0]
                 dstRelSpeed = (dstSpeed / dstVehs) / dstSpeedLimit if dstVehs > 0 else 1.0
-                if dstVehs * VEH_LENGTH >= dstLength * JAM_THRESH and dstRelSpeed < 0.1:
+                if dstVehs * VEH_LENGTH >= dstLength * JAM_THRESH and dstRelSpeed < SPEED_THRESH:
                     # lane is full and slow
                     dstLanesJammed[dstLane] = True
                     #print("%s agent %s ignoring target lane %s dstVehs=%s, dstSpeed=%s, dstRelSpeed=%s" % (
@@ -143,7 +143,7 @@ class TestAgent():
                 if road != lastEdge:
                     speed = vehData['speed'][0]
                     stoplineDist = length - vehData['distance'][0]
-                    if ((speed < SLOW_THRESH * speedLimit) or (stoplineDist / speedLimit < 10)
+                    if ((speed < SLOW_THRESH * speedLimit) or (stoplineDist / speedLimit < STOP_LINE_HEADWAY)
                             and not self.targetLaneJammed(veh, vehData['route'], dstLanesJammed)):
                         laneQ += 1
                         vehs.append(veh)
@@ -178,7 +178,7 @@ class TestAgent():
                         if predRoad != lastEdge:
                             speed = vehData['speed'][0]
                             stoplineDist = length + predLength - vehData['distance'][0]
-                            if (speed < 0.5 * speedLimit) or (stoplineDist / speedLimit < 10):
+                            if (speed < SLOW_THRESH * speedLimit) or (stoplineDist / speedLimit < STOP_LINE_HEADWAY):
                                 laneQ += 1
                                 vehs.append(veh)
                                 #print("%s adding pred phase=%s index=%s lane=%s len=%s predRoad=%s predVeh=%s" % (
@@ -263,7 +263,7 @@ class TestAgent():
                     length = self.roads[road]['length']
                     relSpeed = (speedSum / numVehs) / speedLimit if numVehs > 0 else 1.0
                     # road is full and slow
-                    if numVehs * VEH_LENGTH > length * JAM_THRESH and relSpeed < 0.1:
+                    if numVehs * VEH_LENGTH > length * JAM_THRESH and relSpeed < SPEED_THRESH:
                         self.jammed_lanes[lane] += JAM_BONUS
 
 
