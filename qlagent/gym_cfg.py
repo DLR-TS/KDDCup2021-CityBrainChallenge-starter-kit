@@ -10,4 +10,4 @@ JAM_THRESH  = 2./3.  # at which relative occupancy a lane is considered jammed, 
 MIN_CHECK_LENGTH = 100  # look upstream to find more queued vehicles if a lane is shorter than this
 JAM_BONUS = 5  # bonus vehicles to add to a jammed lane per act call (every 10s) until it gets green
 MAX_GREEN_SEC = 180  # to be optimized 120 240
-PREFER_DUAL_THRESHOLD = 5  # How many vehicles could pass the intersection in 5s allread (if we have more vehicles in a dual queue switching, beats single queue discharge)
+PREFER_DUAL_THRESHOLD = 7  # How many vehicles could pass the intersection in 5s allread (if we have more vehicles in a dual queue switching, beats single queue discharge)
