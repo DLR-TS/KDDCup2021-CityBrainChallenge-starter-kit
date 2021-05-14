@@ -18,6 +18,28 @@
 4.  `yarn start`
 5.  Open http://localhost:3000 in your web browser
 
+## Run optimization
+Edit the gym_cfg.py in your agent dir. Every line of the form "PARAM=value" which also contains the keyword optimized and the range of values will be evaluated by the optimize script. Example:
+```
+HEADWAY = 2.0  # to be optimized 1.5 2.5
+```
+will trigger an optimization of the HEADWAY value between 1.5 and 2.5 with 2.0 as initial value (currently not used).
+Then run `./optimize.py myagent`
+
+## Docker Tricks and other useful commands
+1. Copy a docker container to a different machine
+
+`docker save kdd | bzip2 | pv | ssh user@machine 'bunzip2 | docker load`
+
+2. Kill all running docker processes
+
+`docker kill $(docker ps -q)`
+
+3. Run your agent without bash
+
+`docker run -v $PWD:/starter-kit kdd /starter-kit/run.sh myagent`
+
+
 ### FAQ
 
 1. 
