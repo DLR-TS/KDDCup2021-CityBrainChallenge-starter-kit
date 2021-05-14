@@ -3,6 +3,7 @@ import os
 import argparse
 import shutil
 import subprocess
+import atexit
 
 #from optimparallel import minimize_parallel
 
@@ -19,15 +20,16 @@ def run_evaluation(par, names, agent):
             for n, val in zip(names, par):
                 if ls and ls[0] == n:
                     ls[2] = str(val)
-                    line = " ".join(ls)
+                    line = " ".join(ls) + "\n"
                     break
             cfg.write(line)
-    subprocess.call("docker run -it -v $PWD:/starter-kit kdd /starter-kit/run.sh %s" % par_agent, shell=True)
-    return 1
+    return subprocess.Popen("docker run -v $PWD:/starter-kit kdd /starter-kit/run.sh %s" % par_agent, shell=True)
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("agent")
+    parser.add_argument("-t", "--threads", type=int)
+    parser.add_argument("-s", "--steps", type=int, default=10)
     args = parser.parse_args()
 
     init = []
@@ -47,11 +49,18 @@ if __name__ == "__main__":
             ranges.append(r)
             names.append(ls[0])
     print("optimizing", names, init, ranges)
-    num_steps = 10
+    atexit.register(lambda: subprocess.call("docker kill $(docker ps -q)", shell=True))
     for idx in range(len(init)):
-        step = (ranges[idx][1] - ranges[idx][0]) / num_steps
+        step = (ranges[idx][1] - ranges[idx][0]) / args.steps
         values = list(init)
-        for i in range(num_steps):
+        procs = []
+        for i in range(args.steps):
             values[idx] = ranges[idx][0] + i * step
-            run_evaluation(values, names, args.agent)
+            procs.append(run_evaluation(values, names, args.agent))
+            if args.threads and len(procs) == args.threads:
+                for p in procs:
+                    p.wait()
+                procs = []
+        for p in procs:
+            p.wait()
 #    opt = minimize_parallel(run_evaluation, init, names, bounds=ranges)
