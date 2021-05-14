@@ -13,7 +13,8 @@ def run_evaluation(par, names, agent):
     par_agent = agent + "_".join(["_".join(p) for p in zip(names, [str(pp) for pp in par])])
     print("copying", agent, "to", par_agent)
     shutil.rmtree(par_agent, ignore_errors=True)
-    shutil.copytree(agent, par_agent)
+    os.makedirs(par_agent, exist_ok=True)
+    shutil.copy2(os.path.join(agent, "agent.py"), par_agent)
     with open(os.path.join(agent, "gym_cfg.py")) as cfg_in, open(os.path.join(par_agent, "gym_cfg.py"), "w") as cfg:
         for line in cfg_in:
             ls = line.split()
