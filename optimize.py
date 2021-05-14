@@ -24,6 +24,13 @@ def run_evaluation(par, names, agent):
                     line = " ".join(ls) + "\n"
                     break
             cfg.write(line)
+    with open(os.path.join("cfg", "simulator.cfg")) as cfg_in, open(os.path.join(par_agent, "simulator.cfg"), "w") as cfg:
+        for line in cfg_in:
+            ls = line.split()
+            if ls and ls[0] == 'report_log_addr':
+                ls[2] = "./%s/" % par_agent
+                line = " ".join(ls) + "\n"
+            cfg.write(line)
     return subprocess.Popen("docker run -v $PWD:/starter-kit kdd /starter-kit/run.sh %s" % par_agent, shell=True)
 
 if __name__ == "__main__":
