@@ -2,7 +2,7 @@ import os
 import sys
 from collections import defaultdict
 
-from gym_cfg import HEADWAY, SLOW_THRESH, JAM_THRESH, MIN_CHECK_LENGTH, JAM_BONUS, MAX_GREEN_SEC
+from gym_cfg import HEADWAY, SLOW_THRESH, JAM_THRESH, MIN_CHECK_LENGTH, JAM_BONUS, MAX_GREEN_SEC, PREFER_DUAL_THRESHOLD
 
 
 
@@ -99,12 +99,13 @@ class TestAgent():
         """return total queue length and maximum lane queue length"""
 
         result = 0
-        maxLaneQ = 0
+        assert(len(PHASE_LANES[phase]) == 2)
+        queueLengths = [-1, -1]
         # count vehicles that are "slow" or that can reach the intersection
         # within the next 10s
         hasRoad = False
         hasDestRoad = False
-        for index in PHASE_LANES[phase]:
+        for resultIndex, index in enumerate(PHASE_LANES[phase]):
             laneQ = 0
             vehs = []
             lane = self.intersections[agent]['lanes'][index - 1]
@@ -143,7 +144,6 @@ class TestAgent():
                     speed = vehData['speed'][0]
                     stoplineDist = length - vehData['distance'][0]
                     if (speed < SLOW_THRESH * speedLimit) or (stoplineDist / speedLimit < 10):
-                        result += 1
                         laneQ += 1
                         vehs.append(veh)
 
@@ -178,23 +178,27 @@ class TestAgent():
                             speed = vehData['speed'][0]
                             stoplineDist = length + predLength - vehData['distance'][0]
                             if (speed < 0.5 * speedLimit) or (stoplineDist / speedLimit < 10):
-                                result += 1
                                 laneQ += 1
                                 vehs.append(veh)
                                 #print("%s adding pred phase=%s index=%s lane=%s len=%s predRoad=%s predVeh=%s" % (
                                 #    agent, phase, index, lane, length, predRoad, veh))
 
-            # apply jam bonus (there might be more vehicles over the horizon
-            result += self.jammed_lanes[lane]
+            # apply jam bonus (there might be more vehicles over the horizon)
 
             #print(phase, index, lane, vehs)
-            maxLaneQ = max(laneQ, maxLaneQ)
+            queueLengths[resultIndex] = laneQ + self.jammed_lanes[lane]
 
         if hasRoad and hasDestRoad:
-            return result, maxLaneQ
+            # maximize flow:
+            # if two lanes can be discharged (above a minimum queue length) this is always better than discharging only a single lane
+            dualFlow = min(queueLengths)
+            if dualFlow < PREFER_DUAL_THRESHOLD:
+                # sort by total flow instead
+                dualFlow = 0
+            totalFlow = sum([max(q, 0) for q in queueLengths])
+            return dualFlow, totalFlow
         else:
             return -1, -1
-
 
     def act(self, obs):
         # observations is returned 'observation' of env.step()
@@ -247,14 +251,16 @@ class TestAgent():
             newPhase = oldPhase
             queue_lengths = list([(self.get_queue_lengths(now_step, agent, p, laneVehs), p) for p in range(1,9)])
             assert(queue_lengths[oldPhase - 1][1] == oldPhase)
-            currLength, maxLaneQ = queue_lengths[oldPhase - 1][0]
+            dual, total = queue_lengths[oldPhase - 1][0]
             queue_lengths.sort(reverse=True)
-            if maxLaneQ * HEADWAY > 10:
+            bestDual, bestTotal = queue_lengths[0][0]
+            if dual > 0 or (bestDual == 0 and total * HEADWAY > 10):
+                # dualFlow > 0 already means it's above PREFER_DUAL_THRESHOLD
                 # keep current phase
                 if agent == DEBUGID:
                     print(now_step, agent, "keep oldPhase", oldPhase)
             else:
-                length, newPhase = queue_lengths[0]
+                lengths, newPhase = queue_lengths[0]
 
             if step_diff > MAX_GREEN_SEC:
                 nextBest = 0
