@@ -8,18 +8,19 @@ import json
 
 #from optimparallel import minimize_parallel
 
-def start_evaluation(par, names, agent, simcfg):
+def start_evaluation(param, names, agent, simcfg):
     if agent.endswith("/"):
         agent = agent[:-1]
-    par_agent = agent + "_".join([("%s_%.3f" % (n[:3], p)).rstrip("0") for n, p in zip(names, par)])
+    par_agent = agent + "_".join([("%s_%.3f" % (n[:3], p)).rstrip("0") for n, p in zip(names, param)])
     print("copying", agent, "to", par_agent)
     shutil.rmtree(par_agent, ignore_errors=True)
     os.makedirs(par_agent, exist_ok=True)
+    open(os.path.join(par_agent, ".gitignore"), "w").close()
     shutil.copy2(os.path.join(agent, "agent.py"), par_agent)
     with open(os.path.join(agent, "gym_cfg.py")) as cfg_in, open(os.path.join(par_agent, "gym_cfg.py"), "w") as cfg:
         for line in cfg_in:
             ls = line.split()
-            for n, val in zip(names, par):
+            for n, val in zip(names, param):
                 if ls and ls[0] == n:
                     ls[2] = str(val)
                     line = " ".join(ls) + "\n"
@@ -32,7 +33,7 @@ def start_evaluation(par, names, agent, simcfg):
                 ls[2] = "./%s/" % par_agent
                 line = " ".join(ls) + "\n"
             cfg.write(line)
-    return subprocess.Popen("docker run -v $PWD:/starter-kit kdd /starter-kit/run.sh %s" % par_agent, shell=True), par_agent, par
+    return subprocess.Popen("docker run -v $PWD:/starter-kit kdd /starter-kit/run.sh %s" % par_agent, shell=True), par_agent, list(param)
 
 def get_score(par_agent):
     scores = json.load(open(os.path.join(par_agent, "scores.json")))
