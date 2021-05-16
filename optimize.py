@@ -11,7 +11,7 @@ import json
 def start_evaluation(par, names, agent, simcfg):
     if agent.endswith("/"):
         agent = agent[:-1]
-    par_agent = agent + "_".join(["_".join(p) for p in zip(names, [str(pp) for pp in par])])
+    par_agent = agent + "_".join([("%s_%.3f" % (n[:3], p)).rstrip("0") for n, p in zip(names, par)])
     print("copying", agent, "to", par_agent)
     shutil.rmtree(par_agent, ignore_errors=True)
     os.makedirs(par_agent, exist_ok=True)
