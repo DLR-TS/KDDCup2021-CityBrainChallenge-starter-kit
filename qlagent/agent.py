@@ -2,7 +2,7 @@ import os
 import sys
 from collections import defaultdict
 
-from gym_cfg import HEADWAY, SLOW_THRESH, JAM_THRESH, MIN_CHECK_LENGTH, JAM_BONUS, MAX_GREEN_SEC, PREFER_DUAL_THRESHOLD, SPEED_THRESH, STOP_LINE_HEADWAY
+from gym_cfg import HEADWAY, SLOW_THRESH, JAM_THRESH, MIN_CHECK_LENGTH, JAM_BONUS, MAX_GREEN_SEC, PREFER_DUAL_THRESHOLD, SPEED_THRESH, STOP_LINE_HEADWAY, BUFFER_THRESH
 
 
 
@@ -128,10 +128,15 @@ class TestAgent():
                 dstSpeed = 0
                 dstLane = self.intersections[agent]['lanes'][dstIndex - 1]
                 dstVehs = len(laneVehs[dstLane])
+                bufferVehs = 0 # count vehicles in the "insertion buffer". They also block upstream flow
                 for veh, vehData in laneVehs[dstLane]:
-                    dstSpeed += vehData['speed'][0]
+                    speed = vehData['speed'][0]
+                    pos = vehData['distance'][0]
+                    dstSpeed += speed
+                    if pos < 5 and speed == 0:
+                        bufferVehs += 1
                 dstRelSpeed = (dstSpeed / dstVehs) / dstSpeedLimit if dstVehs > 0 else 1.0
-                if dstVehs * VEH_LENGTH >= dstLength * JAM_THRESH and dstRelSpeed < SPEED_THRESH:
+                if (dstVehs * VEH_LENGTH >= dstLength * JAM_THRESH and dstRelSpeed < SPEED_THRESH) or bufferVehs > BUFFER_THRESH:
                     # lane is full and slow
                     dstLanesJammed[dstLane] = True
                     #print("%s agent %s ignoring target lane %s dstVehs=%s, dstSpeed=%s, dstRelSpeed=%s" % (
