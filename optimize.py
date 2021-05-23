@@ -74,7 +74,7 @@ def parallel_single_parameter(names, init, ranges, args):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("agent")
-    parser.add_argument("-t", "--threads", type=int)
+    parser.add_argument("-t", "--threads", type=int, default=10)
     parser.add_argument("-s", "--steps", type=int, default=10)
     parser.add_argument("-c", "--simulator-cfg", default="cfg/simulator.cfg")
     parser.add_argument("-m", "--method", default="plain")
@@ -107,5 +107,13 @@ if __name__ == "__main__":
         opt = minimize_parallel(run_evaluation, init, (names, args), bounds=ranges, options={"eps":0.01})
     else:
         # this needs pip install scikit-optimize
-        from skopt import gp_minimize
-        opt = gp_minimize(lambda x: run_evaluation(x, names, args), ranges)
+        from skopt import Optimizer
+        # from skopt.space import Real  # to be used for the dimensions argument like [Real(-5.0, 10.0), Real(0.0, 15.0)]
+        from joblib import Parallel, delayed
+
+        optimizer = Optimizer(dimensions=ranges, random_state=42)
+        for i in range(args.steps):
+            x = optimizer.ask(n_points=args.threads)  # x is a list of n_points points
+            y = Parallel(n_jobs=args.threads)(delayed(lambda x: run_evaluation(x, names, args))(v) for v in x)  # evaluate points in parallel
+            optimizer.tell(x, y)
+        opt = min(optimizer.yi)
