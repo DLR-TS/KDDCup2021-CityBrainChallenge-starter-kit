@@ -5,13 +5,16 @@ import shutil
 import subprocess
 import atexit
 import json
+import uuid
 
-#from optimparallel import minimize_parallel
 
-def start_evaluation(param, names, agent, simcfg):
+def start_evaluation(param, names, agent, simcfg, useUuid):
     if agent.endswith("/"):
         agent = agent[:-1]
-    par_agent = agent + "_".join([("%s_%.3f" % (n[:3], p)).rstrip("0") for n, p in zip(names, param)])
+    if useUuid:
+        par_agent = "%s_%s" % (agent, uuid.uuid1())
+    else:
+        par_agent = agent + "_".join([("%s_%.3f" % (n[:3], p)).rstrip("0") for n, p in zip(names, param)])
     print("copying", agent, "to", par_agent)
     shutil.rmtree(par_agent, ignore_errors=True)
     os.makedirs(par_agent, exist_ok=True)
@@ -39,10 +42,34 @@ def get_score(par_agent):
     scores = json.load(open(os.path.join(par_agent, "scores.json")))
     return scores["data"]["delay_index"]
 
-def run_evaluation(par, names, agent):
-    p, par_agent, _ = start_evaluation(par, names, agent)
+def run_evaluation(par, names, args):
+    p, par_agent, _ = start_evaluation(par, names, args.agent, args.simulator_cfg, args.uuid)
     p.wait()
     return get_score(par_agent)
+
+def parallel_single_parameter(names, init, ranges, args):
+    values = list(init)
+    for idx in range(len(init)):
+        scores = {}
+        step = (ranges[idx][1] - ranges[idx][0]) / args.steps
+        procs = []
+        for i in range(args.steps):
+            values[idx] = ranges[idx][0] + i * step
+            procs.append(start_evaluation(values, names, args.agent, args.simulator_cfg, args.uuid))
+            if args.threads and len(procs) == args.threads:
+                for proc, a, par in procs:
+                    proc.wait()
+                    scores[a] = (par, get_score(a))
+                procs = []
+        for proc, a, par in procs:
+            proc.wait()
+            scores[a] = (par, get_score(a))
+        procs = []
+        min_agent, (min_par, min_score) = min(scores.items(), key=lambda i: i[1][1])
+        print("scores", scores)
+        print("min", min_agent, min_par, min_score)
+        values[idx] = min_par[idx]
+    return values
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
@@ -50,6 +77,8 @@ if __name__ == "__main__":
     parser.add_argument("-t", "--threads", type=int)
     parser.add_argument("-s", "--steps", type=int, default=10)
     parser.add_argument("-c", "--simulator-cfg", default="cfg/simulator.cfg")
+    parser.add_argument("-m", "--method", default="plain")
+    parser.add_argument("-u", "--uuid", action="store_true", default=False)
     args = parser.parse_args()
 
     init = []
@@ -69,26 +98,14 @@ if __name__ == "__main__":
             ranges.append(r)
             names.append(ls[0])
     print("optimizing", names, init, ranges)
-    atexit.register(lambda: subprocess.call("docker kill $(docker ps -q)", shell=True) if procs else None)
-    values = list(init)
-    for idx in range(len(init)):
-        scores = {}
-        step = (ranges[idx][1] - ranges[idx][0]) / args.steps
-        procs = []
-        for i in range(args.steps):
-            values[idx] = ranges[idx][0] + i * step
-            procs.append(start_evaluation(values, names, args.agent, args.simulator_cfg))
-            if args.threads and len(procs) == args.threads:
-                for proc, a, par in procs:
-                    proc.wait()
-                    scores[a] = (par, get_score(a))
-                procs = []
-        for proc, a, par in procs:
-            proc.wait()
-            scores[a] = (par, get_score(a))
-        procs = []
-        min_agent, (min_par, min_score) = min(scores.items(), key=lambda i: i[1][1])
-        print("scores", scores)
-        print("min", min_agent, min_par, min_score)
-        values[idx] = min_par[idx]
-#    opt = minimize_parallel(run_evaluation, init, names, bounds=ranges)
+    atexit.register(lambda: subprocess.call("docker kill $(docker ps -q)", shell=True))
+    if args.method == "plain":
+        opt = parallel_single_parameter(names, init, ranges, args)
+    elif args.method == "optim":
+        # this needs pip install optimparallel
+        from optimparallel import minimize_parallel
+        opt = minimize_parallel(run_evaluation, init, (names, args), bounds=ranges, options={"eps":0.01})
+    else:
+        # this needs pip install scikit-optimize
+        from skopt import gp_minimize
+        opt = gp_minimize(lambda x: run_evaluation(x, names, args), ranges)
