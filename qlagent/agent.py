@@ -53,8 +53,6 @@ VEH_LENGTH = 5.0  # length read from infos, should be valid, optimize JAM_THRESH
 class TestAgent():
     def __init__(self):
         self.now_phase = {}
-        self.green_sec = 40
-        self.max_phase = 4
         self.last_change_step = {}
         self.agent_list = []
         self.phase_passablelane = {}
@@ -64,6 +62,9 @@ class TestAgent():
         self.agentFiles = {}
         # lane -> bonus
         self.jammed_lanes = defaultdict(lambda : 0)
+        # road -> (from, to, dist[in s])
+        self.tls_dist = {}
+
     ################################
     # don't modify this function.
     # agent_list is a list of agent_id
@@ -92,6 +93,9 @@ class TestAgent():
     def load_roadnet(self,intersections, roads, agents):
         self.intersections = intersections
         self.roads = roads
+        for road, road_data in roads.items():
+            if intersections[road_data['start_inter']]['have_signal'] and intersections[road_data['end_inter']]['have_signal']:
+                self.tls_dist[road] = (road_data['start_inter'], road_data['end_inter'], road_data['length'] / road_data['speed_limit'])
         self.agents = agents
     ################################
 
@@ -241,6 +245,7 @@ class TestAgent():
     def act(self, obs):
         # observations is returned 'observation' of env.step()
         # info is returned 'info' of env.step()
+        #print(sorted(self.tls_dist.items(), key=lambda i: i[1][2])[:10])
         observations = obs['observations']
         info = obs['info']
         #print(obs)
