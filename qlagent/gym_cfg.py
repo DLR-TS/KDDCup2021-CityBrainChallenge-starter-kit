@@ -4,7 +4,7 @@ class gym_cfg():
             'observation_features':['lane_speed','lane_vehicle_num']
         }
 
-MIN_CHECK_LENGTH = 60.0  # look upstream to find more queued vehicles if a lane is shorter than this optimized 60 90
+MIN_CHECK_LENGTH = 45.0  # look upstream to find more queued vehicles if a lane is shorter than this optimized 40 60
 JAM_THRESH = 0.91  # at which relative occupancy a lane is considered jammed, to be optimized 0.9 0.95
 HEADWAY = 1.8  # to be optimized 1 2
 SLOW_THRESH = 0.1  # at which relative speed a vehicle is considered slow, to be optimized 0.1 0.8
