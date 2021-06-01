@@ -154,7 +154,11 @@ class TestAgent():
                     stoplineDist = length - vehData['distance'][0]
                     if ((speed < SLOW_THRESH * speedLimit) or (stoplineDist / speedLimit < STOP_LINE_HEADWAY)
                             and not self.targetLaneJammed(veh, vehData['route'], dstLanesJammed)):
-                        laneQ += 1
+                        # delayIndex is impacted more strongly by vehicles with short routes
+                        # median t_ff is ~720
+                        ttFF = vehData['t_ff'][0]
+                        routeLengthFactor = 720.0 / ttFF
+                        laneQ += routeLengthFactor
                         vehs.append(veh)
 
             if length < MIN_CHECK_LENGTH:
