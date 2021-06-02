@@ -2,7 +2,7 @@ import os
 import sys
 from collections import defaultdict
 
-from gym_cfg import HEADWAY, SLOW_THRESH, JAM_THRESH, MIN_CHECK_LENGTH, JAM_BONUS, MAX_GREEN_SEC, PREFER_DUAL_THRESHOLD, SPEED_THRESH, STOP_LINE_HEADWAY, BUFFER_THRESH
+from gym_cfg import HEADWAY, SLOW_THRESH, JAM_THRESH, MIN_CHECK_LENGTH, JAM_BONUS, MAX_GREEN_SEC, PREFER_DUAL_THRESHOLD, SPEED_THRESH, STOP_LINE_HEADWAY, BUFFER_THRESH, ROUTE_LENGTH_WEIGHT
 
 
 
@@ -157,7 +157,7 @@ class TestAgent():
                         # delayIndex is impacted more strongly by vehicles with short routes
                         # median t_ff is ~720
                         ttFF = vehData['t_ff'][0]
-                        routeLengthFactor = 720.0 / ttFF
+                        routeLengthFactor = ROUTE_LENGTH_WEIGHT / ttFF
                         laneQ += routeLengthFactor
                         vehs.append(veh)
 
