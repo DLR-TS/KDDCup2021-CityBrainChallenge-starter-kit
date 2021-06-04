@@ -49,6 +49,7 @@ PRED_LANES = {
 
 VEH_LENGTH = 5.0  # length read from infos, should be valid, optimize JAM_THRESH instead
 
+TURN_LANE_CACHE = {}
 
 class TestAgent():
     def __init__(self):
@@ -98,6 +99,30 @@ class TestAgent():
                 self.tls_dist[road] = (road_data['start_inter'], road_data['end_inter'], road_data['length'] / road_data['speed_limit'])
         self.agents = agents
     ################################
+
+    def getTurnLane(self, inRoad, outRoad):
+        inOut = (inRoad, outRoad)
+        if not inOut in TURN_LANE_CACHE:
+            junction = self.roads[inRoad]['end_inter']
+            nextLanes = self.intersections[junction]['lanes']
+            if len(nextLanes) == 0:
+                # only signalized nodes define 'lanes'
+                TURN_LANE_CACHE[inOut] = None
+            else:
+                found = False
+                for index in range(12):
+                    inRoad2 = int(nextLanes[index] / 100)
+                    # +1 / -1 to convert between zero-based and 1-based list indices
+                    outRoad2 = int(nextLanes[DEST_LANES[index + 1][0] - 1] / 100)
+                    if inRoad == inRoad2 and outRoad == outRoad2:
+                        found = True
+                        TURN_LANE_CACHE[inOut] = nextLanes[index]
+                        break
+                if not found:
+                    print("Found no lane that connects road %s with %s at junction %s (broken route?)" % (inRoad, outRoad, junction))
+                    TURN_LANE_CACHE[inOut] = None
+        return TURN_LANE_CACHE[inOut]
+
 
     def get_queue_lengths(self, now_step, agent, phase, laneVehs):
         """return total queue length and maximum lane queue length"""
@@ -228,22 +253,17 @@ class TestAgent():
             allJammed = len(dstLanesJammed) == 3
             return allJammed
         else:
-            nextJunction = self.roads[route[1]]['end_inter']
-            nextLanes = self.intersections[nextJunction]['lanes']
-            if len(nextLanes) == 0:
+            lane = self.getTurnLane(route[1], route[2])
+            if lane is None:
                 # only signalized nodes define 'lanes'
                 # we already know that at least one lane is jammed so let's assume the worst
                 return True
-            for index in range(12):
-                inRoad = int(nextLanes[index] / 100)
-                # +1 / -1 to convert between zero-based and 1-based list indices
-                outRoad = int(nextLanes[DEST_LANES[index + 1][0] - 1] / 100)
-                if inRoad == route[1] and outRoad == route[2]:
-                    if nextLanes[index] in dstLanesJammed:
-                        #print("targetLaneJammed for veh %s with route %s, targetLane=%s inRoad=%s outRoad=%s" % (
-                        #    veh, route, nextLanes[index], inRoad, outRoad))
-                        return True
-            return False
+            elif lane in dstLanesJammed:
+                #print("targetLaneJammed for veh %s with route %s, targetLane=%s inRoad=%s outRoad=%s" % (
+                #    veh, route, lane, route[1], route[2]))
+                return True
+            else:
+                return False
 
 
     def act(self, obs):
