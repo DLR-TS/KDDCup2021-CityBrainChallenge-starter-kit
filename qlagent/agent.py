@@ -1,8 +1,8 @@
 import os
-import sys
 from collections import defaultdict
 
-from gym_cfg import HEADWAY, SLOW_THRESH, JAM_THRESH, MIN_CHECK_LENGTH, JAM_BONUS, MAX_GREEN_SEC, PREFER_DUAL_THRESHOLD, SPEED_THRESH, STOP_LINE_HEADWAY, BUFFER_THRESH, ROUTE_LENGTH_WEIGHT
+from gym_cfg import HEADWAY, SLOW_THRESH, JAM_THRESH, MIN_CHECK_LENGTH, JAM_BONUS, MAX_GREEN_SEC, PREFER_DUAL_THRESHOLD
+from gym_cfg import SPEED_THRESH, STOP_LINE_HEADWAY, BUFFER_THRESH, ROUTE_LENGTH_WEIGHT, SWITCH_THRESH
 
 
 
@@ -124,7 +124,7 @@ class TestAgent():
         return TURN_LANE_CACHE[inOut]
 
 
-    def get_queue_lengths(self, now_step, agent, phase, laneVehs):
+    def get_queue_lengths(self, now_step, agent, phase, laneVehs, route_length_weight):
         """return total queue length and maximum lane queue length"""
 
         result = 0
@@ -132,23 +132,31 @@ class TestAgent():
         queueLengths = [-1, -1]
         # count vehicles that are "slow" or that can reach the intersection
         # within the next 10s
-        hasRoad = False
-        hasDestRoad = False
+        hasLane = False
+        hasDst = False
+        for phaseIndex in PHASE_LANES[phase]:
+            if self.intersections[agent]['lanes'][phaseIndex - 1] != -1:
+                hasLane = True
+            #if self.intersections[agent]['lanes'][phaseIndex - 1] == -1:
+                #return -1, -1
+            if self.intersections[agent]['lanes'][DEST_LANES[phaseIndex][0] - 1] != -1:
+                hasDst = True
+        if not hasLane or not hasDst:
+            return -1, -1
+
         for resultIndex, index in enumerate(PHASE_LANES[phase]):
             laneQ = 0
             vehs = []
             lane = self.intersections[agent]['lanes'][index - 1]
             if lane == -1:
                 continue
-            hasRoad = True
             road = int(lane / 100)
             speedLimit = self.roads[road]['speed_limit']
             length = self.roads[road]['length']
+
             dstLane0 = self.intersections[agent]['lanes'][DEST_LANES[index][0] - 1]
             if dstLane0 == -1:
                 continue
-
-            hasDestRoad = True
             dstRoad = int(dstLane0 / 100)
             dstLength = self.roads[dstRoad]['length']
             dstSpeedLimit = self.roads[dstRoad]['speed_limit']
@@ -181,9 +189,7 @@ class TestAgent():
                             and not self.targetLaneJammed(veh, vehData['route'], dstLanesJammed)):
                         # delayIndex is impacted more strongly by vehicles with short routes
                         # median t_ff is ~720
-                        ttFF = vehData['t_ff'][0]
-                        routeLengthFactor = ROUTE_LENGTH_WEIGHT / ttFF
-                        laneQ += routeLengthFactor
+                        laneQ += route_length_weight / vehData['t_ff'][0]
                         vehs.append(veh)
 
             if length < MIN_CHECK_LENGTH:
@@ -217,6 +223,7 @@ class TestAgent():
                             speed = vehData['speed'][0]
                             stoplineDist = length + predLength - vehData['distance'][0]
                             if (speed < SLOW_THRESH * speedLimit) or (stoplineDist / speedLimit < STOP_LINE_HEADWAY):
+                                # laneQ += route_length_weight / vehData['t_ff'][0]
                                 laneQ += 1
                                 vehs.append(veh)
                                 #print("%s adding pred phase=%s index=%s lane=%s len=%s predRoad=%s predVeh=%s" % (
@@ -227,17 +234,14 @@ class TestAgent():
             #print(phase, index, lane, vehs)
             queueLengths[resultIndex] = laneQ + self.jammed_lanes[lane]
 
-        if hasRoad and hasDestRoad:
-            # maximize flow:
-            # if two lanes can be discharged (above a minimum queue length) this is always better than discharging only a single lane
-            dualFlow = min(queueLengths)
-            if dualFlow < PREFER_DUAL_THRESHOLD:
-                # sort by total flow instead
-                dualFlow = 0
-            totalFlow = sum([max(q, 0) for q in queueLengths])
-            return dualFlow, totalFlow
-        else:
-            return -1, -1
+        # maximize flow:
+        # if two lanes can be discharged (above a minimum queue length) this is always better than discharging only a single lane
+        dualFlow = min(queueLengths)
+        if dualFlow < PREFER_DUAL_THRESHOLD:
+            # sort by total flow instead
+            dualFlow = 0
+        totalFlow = sum([max(q, 0) for q in queueLengths])
+        return dualFlow, totalFlow
 
     def targetLaneJammed(self, veh, route, dstLanesJammed):
         if len(dstLanesJammed) == 0:
@@ -246,7 +250,7 @@ class TestAgent():
             return True
         elif len(route) == 1:
             # route does not go past the junction
-            return False;
+            return False
         elif len(route) == 2:
             # route ends after beyond the current junction
             # all target lanes are permitted
@@ -269,7 +273,6 @@ class TestAgent():
     def act(self, obs):
         # observations is returned 'observation' of env.step()
         # info is returned 'info' of env.step()
-        #print(sorted(self.tls_dist.items(), key=lambda i: i[1][2])[:10])
         observations = obs['observations']
         info = obs['info']
         #print(obs)
@@ -279,8 +282,21 @@ class TestAgent():
         actions = {}
 
         laneVehs = defaultdict(list) # lane -> (veh, vehData)
+        roadUsage = defaultdict(int)
+        ttFF = []
         for veh, vehData in info.items():
             laneVehs[vehData['drivable'][0]].append((veh, vehData))
+            if vehData['road'][0] != vehData['route'][-1]:
+                ttFF.append(vehData['t_ff'][0])
+                for r in vehData['route'][vehData['route'].index(vehData['road'][0]):]:
+                    roadUsage[r] += 1
+        #ttFFMean = sorted(ttFF)[len(ttFF) // 2] if ttFF else ROUTE_LENGTH_WEIGHT
+        #ttFFMean = sum(ttFF) / len(ttFF) if ttFF else ROUTE_LENGTH_WEIGHT
+        #print(ttFFMean)
+        ttFFMean = ROUTE_LENGTH_WEIGHT
+        #for tls_road, dist in sorted(self.tls_dist.items(), key=lambda i: i[1][2])[:100]:
+        #    if roadUsage[tls_road] > 100:
+        #        print(tls_road, dist, roadUsage[tls_road])
 
         # detect jammed lanes
         checked_lanes = set()
@@ -316,23 +332,21 @@ class TestAgent():
 
             oldPhase = self.now_phase[agent]
             newPhase = oldPhase
-            queue_lengths = list([(self.get_queue_lengths(now_step, agent, p, laneVehs), p) for p in range(1,9)])
+            queue_lengths = list([(self.get_queue_lengths(now_step, agent, p, laneVehs, ttFFMean), p) for p in range(1,9)])
             assert(queue_lengths[oldPhase - 1][1] == oldPhase)
             dual, total = queue_lengths[oldPhase - 1][0]
             queue_lengths.sort(reverse=True)
-            bestDual, bestTotal = queue_lengths[0][0]
-            if dual > 0 or (bestDual == 0 and total * HEADWAY > 10):
+            (bestDual, bestTotal), newPhase = queue_lengths[0]
+            if dual > 0 or (bestDual == 0 and (total * HEADWAY > 10 or bestTotal - total <= SWITCH_THRESH)):
                 # dualFlow > 0 already means it's above PREFER_DUAL_THRESHOLD
-                # keep current phase
+                newPhase = oldPhase
                 if agent == DEBUGID:
                     print(now_step, agent, "keep oldPhase", oldPhase)
-            else:
-                lengths, newPhase = queue_lengths[0]
 
             if step_diff > MAX_GREEN_SEC:
                 nextBest = 0
                 while newPhase == oldPhase:
-                    length, newPhase = queue_lengths[nextBest]
+                    newPhase = queue_lengths[nextBest][1]
                     nextBest += 1
                 if agent == DEBUGID:
                     print(now_step, agent, "oldPhase", oldPhase, "maxDuration, newPhase", newPhase)
