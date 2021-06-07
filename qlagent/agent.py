@@ -132,16 +132,13 @@ class TestAgent():
         queueLengths = [-1, -1]
         # count vehicles that are "slow" or that can reach the intersection
         # within the next 10s
-        hasLane = False
         hasDst = False
         for phaseIndex in PHASE_LANES[phase]:
-            if self.intersections[agent]['lanes'][phaseIndex - 1] != -1:
-                hasLane = True
-            #if self.intersections[agent]['lanes'][phaseIndex - 1] == -1:
-                #return -1, -1
+            if self.intersections[agent]['lanes'][phaseIndex - 1] == -1:
+                return -1, -1
             if self.intersections[agent]['lanes'][DEST_LANES[phaseIndex][0] - 1] != -1:
                 hasDst = True
-        if not hasLane or not hasDst:
+        if not hasDst:
             return -1, -1
 
         for resultIndex, index in enumerate(PHASE_LANES[phase]):
@@ -319,12 +316,15 @@ class TestAgent():
 
         # get actions
         for agent in self.agent_list:
-            if self.agentFiles.get(agent) is None:
-                if not os.path.isdir('custom_output'):
-                    os.makedirs('custom_output')
-                self.agentFiles[agent] = open('custom_output/%s.txt' % agent, 'w')
-                self.agentFiles[agent].write('#lanes: %s\n' % self.intersections[agent]['lanes'])
-                self.agentFiles[agent].write('#step oldPhase duration newPhase queueLengths jammedBonus\n')
+            if agent not in self.agentFiles:
+                try:
+                    if not os.path.isdir('custom_output'):
+                        os.makedirs('custom_output')
+                    self.agentFiles[agent] = open('custom_output/%s.txt' % agent, 'w')
+                    self.agentFiles[agent].write('#lanes: %s\n' % self.intersections[agent]['lanes'])
+                    self.agentFiles[agent].write('#step oldPhase duration newPhase queueLengths jammedBonus\n')
+                except:
+                    pass
 
             step_diff = now_step - self.last_change_step[agent]
 
@@ -356,8 +356,9 @@ class TestAgent():
                 print(now_step, agent, queue_lengths, newPhase)
             if newPhase != oldPhase:
                 bonus = list([self.jammed_lanes[lane] for lane in self.intersections[agent]['lanes'][:12]])
-                self.agentFiles[agent].write('%s %s %s %s %s %s\n' % (now_step, oldPhase, step_diff, newPhase, queue_lengths, bonus))
-                self.agentFiles[agent].flush()
+                if agent in self.agentFiles:
+                    self.agentFiles[agent].write('%s %s %s %s %s %s\n' % (now_step, oldPhase, step_diff, newPhase, queue_lengths, bonus))
+                    self.agentFiles[agent].flush()
                 self.last_change_step[agent] = now_step
                 # reset jam bonus
                 for index in PHASE_LANES[newPhase]:
