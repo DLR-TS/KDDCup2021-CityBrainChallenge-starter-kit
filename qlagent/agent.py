@@ -49,7 +49,11 @@ PRED_LANES = {
 
 VEH_LENGTH = 5.0  # length read from infos, should be valid, optimize JAM_THRESH instead
 
+# (inEdge, outEdge) -> lane on inEdge
 TURN_LANE_CACHE = {}
+
+# vehID -> [lane0, lane1, ...]
+ROUTE_LANES_CACHE= {}
 
 class TestAgent():
     def __init__(self):
@@ -123,113 +127,33 @@ class TestAgent():
                     TURN_LANE_CACHE[inOut] = None
         return TURN_LANE_CACHE[inOut]
 
+    def get_queue_lengths(self, now_step, agent, laneVehs, route_length_weight):
+        """return list of phase queue lengths for all phases"""
+        laneQueues = {}
+        for index in range(1, 13):
+            laneQueues[index] = self.get_lane_queue_length(now_step, agent, index, laneVehs, route_length_weight)
 
-    def get_queue_lengths(self, now_step, agent, phase, laneVehs, route_length_weight):
+        return list([(self.get_phase_queue_lengths(now_step, agent, p, laneQueues), p) for p in range(1,9)])
+
+
+    def get_phase_queue_lengths(self, now_step, agent, phase, laneQueues):
         """return total queue length and maximum lane queue length"""
 
-        result = 0
         assert(len(PHASE_LANES[phase]) == 2)
-        queueLengths = [-1, -1]
-        # count vehicles that are "slow" or that can reach the intersection
-        # within the next 10s
+        queueLengths = []
         hasDst = False
-        for phaseIndex in PHASE_LANES[phase]:
-            if self.intersections[agent]['lanes'][phaseIndex - 1] == -1:
-                return -1, -1
-            if self.intersections[agent]['lanes'][DEST_LANES[phaseIndex][0] - 1] != -1:
-                hasDst = True
-        if not hasDst:
-            return -1, -1
-
-        for resultIndex, index in enumerate(PHASE_LANES[phase]):
-            laneQ = 0
-            vehs = []
+        for index in PHASE_LANES[phase]:
             lane = self.intersections[agent]['lanes'][index - 1]
             if lane == -1:
-                continue
-            road = int(lane / 100)
-            speedLimit = self.roads[road]['speed_limit']
-            length = self.roads[road]['length']
+                return -1, -1
 
-            dstLane0 = self.intersections[agent]['lanes'][DEST_LANES[index][0] - 1]
-            if dstLane0 == -1:
-                continue
-            dstRoad = int(dstLane0 / 100)
-            dstLength = self.roads[dstRoad]['length']
-            dstSpeedLimit = self.roads[dstRoad]['speed_limit']
-            dstLanesJammed = {}
-            for dstIndex in DEST_LANES[index]:
-                dstSpeed = 0
-                dstLane = self.intersections[agent]['lanes'][dstIndex - 1]
-                dstVehs = len(laneVehs[dstLane])
-                bufferVehs = 0 # count vehicles in the "insertion buffer". They also block upstream flow
-                for veh, vehData in laneVehs[dstLane]:
-                    speed = vehData['speed'][0]
-                    pos = vehData['distance'][0]
-                    dstSpeed += speed
-                    if pos < 5 and speed == 0:
-                        bufferVehs += 1
-                dstRelSpeed = (dstSpeed / dstVehs) / dstSpeedLimit if dstVehs > 0 else 1.0
-                if (dstVehs * VEH_LENGTH >= dstLength * JAM_THRESH and dstRelSpeed < SPEED_THRESH) or bufferVehs > BUFFER_THRESH:
-                    # lane is full and slow
-                    dstLanesJammed[dstLane] = True
-                    #print("%s agent %s ignoring target lane %s dstVehs=%s, dstSpeed=%s, dstRelSpeed=%s" % (
-                    #    now_step, agent, dstLane, dstVehs, dstSpeed, dstRelSpeed))
+            if self.intersections[agent]['lanes'][DEST_LANES[index][0] - 1] != -1:
+                hasDst = True
+            #print(agent, index, lane, laneQueues)
+            queueLengths.append(laneQueues[index])
 
-
-            for veh, vehData in laneVehs[lane]:
-                lastEdge = vehData['route'][-1]
-                if road != lastEdge:
-                    speed = vehData['speed'][0]
-                    stoplineDist = length - vehData['distance'][0]
-                    if ((speed < SLOW_THRESH * speedLimit) or (stoplineDist / speedLimit < STOP_LINE_HEADWAY)
-                            and not self.targetLaneJammed(veh, vehData['route'], dstLanesJammed)):
-                        # delayIndex is impacted more strongly by vehicles with short routes
-                        # median t_ff is ~720
-                        laneQ += route_length_weight / vehData['t_ff'][0]
-                        vehs.append(veh)
-
-            if length < MIN_CHECK_LENGTH:
-                # extend queue upstream
-                fromNode = self.roads[road]['start_inter']
-                upstreamLanes = self.intersections[fromNode]['lanes']
-                signalized = self.intersections[fromNode]['have_signal']
-
-                predLanes = []
-                # only signalized nodes define 'lanes'
-                if len(upstreamLanes) > 0 and False:
-                    assert(lane in upstreamLanes)
-                    outIndex = upstreamLanes.index(lane) + 1 # 1-based
-                    for predIndex in PRED_LANES[outIndex]:
-                        predLane = upstreamLanes[predIndex - 1]
-                        if predLane >= 0:
-                            predLanes.append(predLane)
-                if not signalized:
-                    for predRoad in self.intersections[fromNode]['end_roads']:
-                        # ignore turnaround
-                        if predRoad >= 0 and self.roads[predRoad]['start_inter'] != agent:
-                            # add straight connected lane
-                            predLanes.append(predRoad * 100 + 1)
-
-                for predLane in predLanes:
-                    predRoad = int(predLane / 100)
-                    predLength = self.roads[predRoad]['length']
-                    for veh, vehData in laneVehs[predLane]:
-                        lastEdge = vehData['route'][-1]
-                        if predRoad != lastEdge:
-                            speed = vehData['speed'][0]
-                            stoplineDist = length + predLength - vehData['distance'][0]
-                            if (speed < SLOW_THRESH * speedLimit) or (stoplineDist / speedLimit < STOP_LINE_HEADWAY):
-                                # laneQ += route_length_weight / vehData['t_ff'][0]
-                                laneQ += 1
-                                vehs.append(veh)
-                                #print("%s adding pred phase=%s index=%s lane=%s len=%s predRoad=%s predVeh=%s" % (
-                                #    agent, phase, index, lane, length, predRoad, veh))
-
-            # apply jam bonus (there might be more vehicles over the horizon)
-
-            #print(phase, index, lane, vehs)
-            queueLengths[resultIndex] = laneQ + self.jammed_lanes[lane]
+        if not hasDst:
+            return -1, -1
 
         # maximize flow:
         # if two lanes can be discharged (above a minimum queue length) this is always better than discharging only a single lane
@@ -239,6 +163,106 @@ class TestAgent():
             dualFlow = 0
         totalFlow = sum([max(q, 0) for q in queueLengths])
         return dualFlow, totalFlow
+
+
+    def get_lane_queue_length(self, now_step, agent, index, laneVehs, route_length_weight):
+        """return length of queue for the given lane id or -1 if the lane is not
+        valid (because it doesn't exist or has not destination)"""
+
+        # count vehicles that are "slow" or that can reach the intersection
+        # within the next 10s
+        lane = self.intersections[agent]['lanes'][index - 1]
+        if lane == -1:
+            # lane does not exist
+            return -1;
+        if self.intersections[agent]['lanes'][DEST_LANES[index][0] - 1] == -1:
+            # destination edge does not exist
+            return -1;
+
+        laneQ = 0
+        vehs = []
+        road = int(lane / 100)
+        speedLimit = self.roads[road]['speed_limit']
+        length = self.roads[road]['length']
+
+        dstLane0 = self.intersections[agent]['lanes'][DEST_LANES[index][0] - 1]
+        dstRoad = int(dstLane0 / 100)
+        dstLength = self.roads[dstRoad]['length']
+        dstSpeedLimit = self.roads[dstRoad]['speed_limit']
+        dstLanesJammed = {}
+        for dstIndex in DEST_LANES[index]:
+            dstSpeed = 0
+            dstLane = self.intersections[agent]['lanes'][dstIndex - 1]
+            dstVehs = len(laneVehs[dstLane])
+            bufferVehs = 0 # count vehicles in the "insertion buffer". They also block upstream flow
+            for veh, vehData in laneVehs[dstLane]:
+                speed = vehData['speed'][0]
+                pos = vehData['distance'][0]
+                dstSpeed += speed
+                if pos < 5 and speed == 0:
+                    bufferVehs += 1
+            dstRelSpeed = (dstSpeed / dstVehs) / dstSpeedLimit if dstVehs > 0 else 1.0
+            if (dstVehs * VEH_LENGTH >= dstLength * JAM_THRESH and dstRelSpeed < SPEED_THRESH) or bufferVehs > BUFFER_THRESH:
+                # lane is full and slow
+                dstLanesJammed[dstLane] = True
+                #print("%s agent %s ignoring target lane %s dstVehs=%s, dstSpeed=%s, dstRelSpeed=%s" % (
+                #    now_step, agent, dstLane, dstVehs, dstSpeed, dstRelSpeed))
+
+
+        for veh, vehData in laneVehs[lane]:
+            lastEdge = vehData['route'][-1]
+            if road != lastEdge:
+                speed = vehData['speed'][0]
+                stoplineDist = length - vehData['distance'][0]
+                if ((speed < SLOW_THRESH * speedLimit) or (stoplineDist / speedLimit < STOP_LINE_HEADWAY)
+                        and not self.targetLaneJammed(veh, vehData['route'], dstLanesJammed)):
+                    # delayIndex is impacted more strongly by vehicles with short routes
+                    # median t_ff is ~720
+                    laneQ += route_length_weight / vehData['t_ff'][0]
+                    vehs.append(veh)
+
+        if length < MIN_CHECK_LENGTH:
+            # extend queue upstream
+            fromNode = self.roads[road]['start_inter']
+            upstreamLanes = self.intersections[fromNode]['lanes']
+            signalized = self.intersections[fromNode]['have_signal']
+
+            predLanes = []
+            # only signalized nodes define 'lanes'
+            if len(upstreamLanes) > 0 and False:
+                assert(lane in upstreamLanes)
+                outIndex = upstreamLanes.index(lane) + 1 # 1-based
+                for predIndex in PRED_LANES[outIndex]:
+                    predLane = upstreamLanes[predIndex - 1]
+                    if predLane >= 0:
+                        predLanes.append(predLane)
+            if not signalized:
+                for predRoad in self.intersections[fromNode]['end_roads']:
+                    # ignore turnaround
+                    if predRoad >= 0 and self.roads[predRoad]['start_inter'] != agent:
+                        # add straight connected lane
+                        predLanes.append(predRoad * 100 + 1)
+
+            for predLane in predLanes:
+                predRoad = int(predLane / 100)
+                predLength = self.roads[predRoad]['length']
+                for veh, vehData in laneVehs[predLane]:
+                    lastEdge = vehData['route'][-1]
+                    if predRoad != lastEdge:
+                        speed = vehData['speed'][0]
+                        stoplineDist = length + predLength - vehData['distance'][0]
+                        if (speed < SLOW_THRESH * speedLimit) or (stoplineDist / speedLimit < STOP_LINE_HEADWAY):
+                            # laneQ += route_length_weight / vehData['t_ff'][0]
+                            laneQ += 1
+                            vehs.append(veh)
+                            #print("%s adding pred phase=%s index=%s lane=%s len=%s predRoad=%s predVeh=%s" % (
+                            #    agent, phase, index, lane, length, predRoad, veh))
+
+        # apply jam bonus (there might be more vehicles over the horizon)
+
+        #print(phase, index, lane, vehs)
+        return laneQ + self.jammed_lanes[lane]
+
 
     def targetLaneJammed(self, veh, route, dstLanesJammed):
         if len(dstLanesJammed) == 0:
@@ -332,7 +356,8 @@ class TestAgent():
 
             oldPhase = self.now_phase[agent]
             newPhase = oldPhase
-            queue_lengths = list([(self.get_queue_lengths(now_step, agent, p, laneVehs, ttFFMean), p) for p in range(1,9)])
+
+            queue_lengths = self.get_queue_lengths(now_step, agent, laneVehs, ttFFMean)
             assert(queue_lengths[oldPhase - 1][1] == oldPhase)
             dual, total = queue_lengths[oldPhase - 1][0]
             queue_lengths.sort(reverse=True)
