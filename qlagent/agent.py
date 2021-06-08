@@ -69,6 +69,8 @@ class TestAgent():
         self.jammed_lanes = defaultdict(lambda : 0)
         # road -> (from, to, dist[in s])
         self.tls_dist = {}
+        # agent -> total queue size each action step
+        self.total_queues = defaultdict(list)
 
     ################################
     # don't modify this function.
@@ -214,12 +216,16 @@ class TestAgent():
             if road != lastEdge:
                 speed = vehData['speed'][0]
                 stoplineDist = length - vehData['distance'][0]
-                if ((speed < SLOW_THRESH * speedLimit) or (stoplineDist / speedLimit < STOP_LINE_HEADWAY)
-                        and not self.targetLaneJammed(veh, vehData['route'], dstLanesJammed)):
-                    # delayIndex is impacted more strongly by vehicles with short routes
-                    # median t_ff is ~720
-                    laneQ += route_length_weight / vehData['t_ff'][0]
-                    vehs.append(veh)
+                if (speed < SLOW_THRESH * speedLimit) or (stoplineDist / speedLimit < STOP_LINE_HEADWAY):
+                    if not self.targetLaneJammed(veh, vehData['route'], dstLanesJammed):
+                        # delayIndex is impacted more strongly by vehicles with short routes
+                        # median t_ff is ~720
+                        fjPenalty = self.getFutureJamPenalty(vehData['route'])
+                        laneQ += (route_length_weight / vehData['t_ff'][0]) / fjPenalty
+                        vehs.append(veh)
+
+                    # count all vehicles without penalties
+                    self.total_queues[agent][-1] += 1
 
         if length < MIN_CHECK_LENGTH:
             # extend queue upstream
@@ -290,6 +296,21 @@ class TestAgent():
             else:
                 return False
 
+    def getFutureJamPenalty(self, route):
+        LOOKAHEAD = 5
+        SATURATED_THRESHOLD = 40.0
+        INC = 10
+        result = 1.0
+        saturated = SATURATED_THRESHOLD
+        for i in range(1, min(len(route), LOOKAHEAD)):
+            junction = self.roads[route[i]]['end_inter']
+            totals = self.total_queues.get(junction, [])
+            if len(totals) > 1:
+                prevStepQueue = totals[-2]
+                # discount future jams
+                result *= max(1, prevStepQueue / saturated)
+            saturated += INC
+        return result
 
     def act(self, obs):
         # observations is returned 'observation' of env.step()
@@ -322,6 +343,7 @@ class TestAgent():
         # detect jammed lanes
         checked_lanes = set()
         for agent in self.agent_list:
+            self.total_queues[agent].append(0)
             for lane in self.intersections[agent]['lanes']:
                 if lane >= 0 and lane not in checked_lanes:
                     checked_lanes.add(lane)
@@ -346,7 +368,7 @@ class TestAgent():
                         os.makedirs('custom_output')
                     self.agentFiles[agent] = open('custom_output/%s.txt' % agent, 'w')
                     self.agentFiles[agent].write('#lanes: %s\n' % self.intersections[agent]['lanes'])
-                    self.agentFiles[agent].write('#step oldPhase duration newPhase queueLengths jammedBonus\n')
+                    self.agentFiles[agent].write('#step oldPhase duration newPhase totalQueued queueLengths jammedBonus\n')
                 except:
                     pass
 
@@ -382,7 +404,7 @@ class TestAgent():
             if newPhase != oldPhase:
                 bonus = list([self.jammed_lanes[lane] for lane in self.intersections[agent]['lanes'][:12]])
                 if agent in self.agentFiles:
-                    self.agentFiles[agent].write('%s %s %s %s %s %s\n' % (now_step, oldPhase, step_diff, newPhase, queue_lengths, bonus))
+                    self.agentFiles[agent].write('%s %s %s %s %.2f %s %s\n' % (now_step, oldPhase, step_diff, newPhase, self.total_queues[agent][-1], queue_lengths, bonus))
                     self.agentFiles[agent].flush()
                 self.last_change_step[agent] = now_step
                 # reset jam bonus
