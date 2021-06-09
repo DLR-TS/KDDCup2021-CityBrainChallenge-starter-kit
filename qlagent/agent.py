@@ -3,7 +3,7 @@ from collections import defaultdict
 
 from gym_cfg import HEADWAY, SLOW_THRESH, JAM_THRESH, MIN_CHECK_LENGTH, JAM_BONUS, MAX_GREEN_SEC, PREFER_DUAL_THRESHOLD
 from gym_cfg import SPEED_THRESH, STOP_LINE_HEADWAY, BUFFER_THRESH, ROUTE_LENGTH_WEIGHT, SWITCH_THRESH
-
+from gym_cfg import FUTURE_JAM_LOOKAHEAD, SATURATED_THRESHOLD, SATURATION_INC
 
 
 PHASE_LANES = {
@@ -297,19 +297,16 @@ class TestAgent():
                 return False
 
     def getFutureJamPenalty(self, route):
-        LOOKAHEAD = 5
-        SATURATED_THRESHOLD = 40.0
-        INC = 10
         result = 1.0
         saturated = SATURATED_THRESHOLD
-        for i in range(1, min(len(route), LOOKAHEAD)):
+        for i in range(1, min(len(route), int(FUTURE_JAM_LOOKAHEAD + 0.5))):
             junction = self.roads[route[i]]['end_inter']
             totals = self.total_queues.get(junction, [])
             if len(totals) > 1:
                 prevStepQueue = totals[-2]
                 # discount future jams
                 result *= max(1, prevStepQueue / saturated)
-            saturated += INC
+            saturated += SATURATION_INC
         return result
 
     def act(self, obs):
