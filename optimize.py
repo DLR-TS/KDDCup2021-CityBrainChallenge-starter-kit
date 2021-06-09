@@ -101,6 +101,15 @@ if __name__ == "__main__":
     atexit.register(lambda: subprocess.call("docker kill $(docker ps -q)", shell=True))
     if args.method == "plain":
         opt = parallel_single_parameter(names, init, ranges, args)
+    elif args.method == "cobyla":
+        def constr(x, names, args):
+            print(x)
+            for v, (lower, upper) in zip(x, ranges):
+                if v < lower or v > upper:
+                    return -1
+            return 1
+        from scipy.optimize import fmin_cobyla
+        fmin_cobyla(run_evaluation, init, cons=[constr], args=(names, args), rhoend=1e-7)
     elif args.method == "optim":
         # this needs pip install optimparallel
         from optimparallel import minimize_parallel
