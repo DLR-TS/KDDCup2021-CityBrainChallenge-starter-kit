@@ -48,6 +48,7 @@ PRED_LANES = {
         }
 
 VEH_LENGTH = 5.0  # length read from infos, should be valid, optimize JAM_THRESH instead
+SLICE = 1200
 
 # (inEdge, outEdge) -> lane on inEdge
 TURN_LANE_CACHE = {}
@@ -160,7 +161,7 @@ class TestAgent():
         # maximize flow:
         # if two lanes can be discharged (above a minimum queue length) this is always better than discharging only a single lane
         dualFlow = min(queueLengths)
-        if dualFlow < PREFER_DUAL_THRESHOLD:
+        if dualFlow < PREFER_DUAL_THRESHOLD[now_step // SLICE]:
             # sort by total flow instead
             dualFlow = 0
         totalFlow = sum([max(q, 0) for q in queueLengths])
@@ -204,7 +205,7 @@ class TestAgent():
                 if pos < 5 and speed == 0:
                     bufferVehs += 1
             dstRelSpeed = (dstSpeed / dstVehs) / dstSpeedLimit if dstVehs > 0 else 1.0
-            if (dstVehs * VEH_LENGTH >= dstLength * JAM_THRESH and dstRelSpeed < SPEED_THRESH) or bufferVehs > BUFFER_THRESH:
+            if (dstVehs * VEH_LENGTH >= dstLength * JAM_THRESH[now_step // SLICE] and dstRelSpeed < SPEED_THRESH[now_step // SLICE]) or bufferVehs > BUFFER_THRESH[now_step // SLICE]:
                 # lane is full and slow
                 dstLanesJammed[dstLane] = True
                 #print("%s agent %s ignoring target lane %s dstVehs=%s, dstSpeed=%s, dstRelSpeed=%s" % (
@@ -216,18 +217,18 @@ class TestAgent():
             if road != lastEdge:
                 speed = vehData['speed'][0]
                 stoplineDist = length - vehData['distance'][0]
-                if (speed < SLOW_THRESH * speedLimit) or (stoplineDist / speedLimit < STOP_LINE_HEADWAY):
+                if (speed < SLOW_THRESH[now_step // SLICE] * speedLimit) or (stoplineDist / speedLimit < STOP_LINE_HEADWAY[now_step // SLICE]):
                     if not self.targetLaneJammed(veh, vehData['route'], dstLanesJammed):
                         # delayIndex is impacted more strongly by vehicles with short routes
                         # median t_ff is ~720
-                        fjPenalty = self.getFutureJamPenalty(vehData['route'])
+                        fjPenalty = self.getFutureJamPenalty(vehData['route'], now_step)
                         laneQ += (route_length_weight / vehData['t_ff'][0]) / fjPenalty
                         vehs.append(veh)
 
                     # count all vehicles without penalties
                     self.total_queues[agent][-1] += 1
 
-        if length < MIN_CHECK_LENGTH:
+        if length < MIN_CHECK_LENGTH[now_step // SLICE]:
             # extend queue upstream
             fromNode = self.roads[road]['start_inter']
             upstreamLanes = self.intersections[fromNode]['lanes']
@@ -257,7 +258,7 @@ class TestAgent():
                     if predRoad != lastEdge:
                         speed = vehData['speed'][0]
                         stoplineDist = length + predLength - vehData['distance'][0]
-                        if (speed < SLOW_THRESH * speedLimit) or (stoplineDist / speedLimit < STOP_LINE_HEADWAY):
+                        if (speed < SLOW_THRESH[now_step // SLICE] * speedLimit) or (stoplineDist / speedLimit < STOP_LINE_HEADWAY[now_step // SLICE]):
                             # laneQ += route_length_weight / vehData['t_ff'][0]
                             laneQ += 1
                             vehs.append(veh)
@@ -296,17 +297,17 @@ class TestAgent():
             else:
                 return False
 
-    def getFutureJamPenalty(self, route):
+    def getFutureJamPenalty(self, route, now_step):
         result = 1.0
-        saturated = SATURATED_THRESHOLD
-        for i in range(1, min(len(route), int(FUTURE_JAM_LOOKAHEAD + 0.5))):
+        saturated = SATURATED_THRESHOLD[now_step // SLICE]
+        for i in range(1, min(len(route), int(FUTURE_JAM_LOOKAHEAD[now_step // SLICE] + 0.5))):
             junction = self.roads[route[i]]['end_inter']
             totals = self.total_queues.get(junction, [])
             if len(totals) > 1:
                 prevStepQueue = totals[-2]
                 # discount future jams
                 result *= max(1, prevStepQueue / saturated)
-            saturated += SATURATION_INC
+            saturated += SATURATION_INC[now_step // SLICE]
         return result
 
     def act(self, obs):
@@ -332,7 +333,7 @@ class TestAgent():
         #ttFFMean = sorted(ttFF)[len(ttFF) // 2] if ttFF else ROUTE_LENGTH_WEIGHT
         #ttFFMean = sum(ttFF) / len(ttFF) if ttFF else ROUTE_LENGTH_WEIGHT
         #print(ttFFMean)
-        ttFFMean = ROUTE_LENGTH_WEIGHT
+        ttFFMean = ROUTE_LENGTH_WEIGHT[now_step // SLICE]
         #for tls_road, dist in sorted(self.tls_dist.items(), key=lambda i: i[1][2])[:100]:
         #    if roadUsage[tls_road] > 100:
         #        print(tls_road, dist, roadUsage[tls_road])
@@ -353,8 +354,8 @@ class TestAgent():
                     length = self.roads[road]['length']
                     relSpeed = (speedSum / numVehs) / speedLimit if numVehs > 0 else 1.0
                     # road is full and slow
-                    if numVehs * VEH_LENGTH > length * JAM_THRESH and relSpeed < SPEED_THRESH:
-                        self.jammed_lanes[lane] += JAM_BONUS
+                    if numVehs * VEH_LENGTH > length * JAM_THRESH[now_step // SLICE] and relSpeed < SPEED_THRESH[now_step // SLICE]:
+                        self.jammed_lanes[lane] += JAM_BONUS[now_step // SLICE]
 
 
         # get actions
@@ -381,13 +382,13 @@ class TestAgent():
             dual, total = queue_lengths[oldPhase - 1][0]
             queue_lengths.sort(reverse=True)
             (bestDual, bestTotal), newPhase = queue_lengths[0]
-            if dual > 0 or (bestDual == 0 and (total * HEADWAY > 10 or bestTotal - total <= SWITCH_THRESH)):
+            if dual > 0 or (bestDual == 0 and (total * HEADWAY[now_step // SLICE] > 10 or bestTotal - total <= SWITCH_THRESH[now_step // SLICE])):
                 # dualFlow > 0 already means it's above PREFER_DUAL_THRESHOLD
                 newPhase = oldPhase
                 if agent == DEBUGID:
                     print(now_step, agent, "keep oldPhase", oldPhase)
 
-            if step_diff > MAX_GREEN_SEC:
+            if step_diff > MAX_GREEN_SEC[now_step // SLICE]:
                 nextBest = 0
                 while newPhase == oldPhase:
                     newPhase = queue_lengths[nextBest][1]

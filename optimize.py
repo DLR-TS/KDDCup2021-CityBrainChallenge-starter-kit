@@ -8,13 +8,17 @@ import json
 import uuid
 
 
-def start_evaluation(param, names, agent, simcfg, useUuid):
-    if agent.endswith("/"):
-        agent = agent[:-1]
-    if useUuid:
+def start_evaluation(param, names, args):
+    if args.agent.endswith("/"):
+        agent = args.agent[:-1]
+    else:
+        agent = args.agent
+    if args.uuid:
         par_agent = "%s_%s" % (agent, uuid.uuid1())
     else:
         par_agent = agent + "_".join([("%s_%.3f" % (n[:3], p)).rstrip("0") for n, p in zip(names, param)])
+    if args.max_time != 3600:
+        par_agent += "_t%s" % args.max_time
     print("copying", agent, "to", par_agent)
     shutil.rmtree(par_agent, ignore_errors=True)
     os.makedirs(par_agent, exist_ok=True)
@@ -25,15 +29,20 @@ def start_evaluation(param, names, agent, simcfg, useUuid):
             ls = line.split()
             for n, val in zip(names, param):
                 if ls and ls[0] == n:
-                    ls[2] = str(val)
-                    line = " ".join(ls) + "\n"
+                    assign, comment = line.split("#")
+                    slices = json.loads(assign.split("=")[1])
+                    slices[args.max_time // 1200 - 1] = val
+                    line = n + " = " + json.dumps(slices) + " # " + comment
                     break
             cfg.write(line)
-    with open(simcfg) as cfg_in, open(os.path.join(par_agent, "simulator.cfg"), "w") as cfg:
+    with open(args.simulator_cfg) as cfg_in, open(os.path.join(par_agent, "simulator.cfg"), "w") as cfg:
         for line in cfg_in:
             ls = line.split()
             if ls and ls[0] == 'report_log_addr':
                 ls[2] = "./%s/" % par_agent
+                line = " ".join(ls) + "\n"
+            if ls and ls[0] == 'max_time_epoch':
+                ls[2] = "%s" % args.max_time
                 line = " ".join(ls) + "\n"
             cfg.write(line)
     return subprocess.Popen("docker run -v $PWD:/starter-kit kdd /starter-kit/run.sh %s" % par_agent, shell=True), par_agent, list(param)
@@ -43,7 +52,7 @@ def get_score(par_agent):
     return scores["data"]["delay_index"]
 
 def run_evaluation(par, names, args):
-    p, par_agent, _ = start_evaluation(par, names, args.agent, args.simulator_cfg, args.uuid)
+    p, par_agent, _ = start_evaluation(par, names, args)
     p.wait()
     return get_score(par_agent)
 
@@ -55,7 +64,7 @@ def parallel_single_parameter(names, init, ranges, args):
         procs = []
         for i in range(args.steps):
             values[idx] = ranges[idx][0] + i * step
-            procs.append(start_evaluation(values, names, args.agent, args.simulator_cfg, args.uuid))
+            procs.append(start_evaluation(values, names, args))
             if args.threads and len(procs) == args.threads:
                 for proc, a, par in procs:
                     proc.wait()
@@ -76,6 +85,7 @@ if __name__ == "__main__":
     parser.add_argument("agent")
     parser.add_argument("-t", "--threads", type=int, default=10)
     parser.add_argument("-s", "--steps", type=int, default=10)
+    parser.add_argument("-a", "--max-time", type=int, default=3600)
     parser.add_argument("-c", "--simulator-cfg", default="cfg/simulator.cfg")
     parser.add_argument("-m", "--method", default="plain")
     parser.add_argument("-u", "--uuid", action="store_true", default=False)
@@ -89,9 +99,12 @@ if __name__ == "__main__":
         if "optimized" in line:
             ls = line.split()
             try:
-                initial = float(ls[2]) 
+                assign = line.split("#")[0]
+                slices = json.loads(assign.split("=")[1])
+                initial = slices[args.max_time // 1200 - 1]
                 r = (float(ls[-2]), float(ls[-1]))
             except:
+                raise
                 pass
         if r:
             init.append(initial)
