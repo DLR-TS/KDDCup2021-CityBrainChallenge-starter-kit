@@ -518,7 +518,7 @@ if __name__ == "__main__":
     ####################
     # modify sim cfg
     simulator_configs = read_config(simulator_cfg_file)
-    flow_index = re.findall('[0-9]+',simulator_configs['vehicle_file_addr'])[1]
+    flow_index = (re.findall('[0-9]+',simulator_configs['vehicle_file_addr']) + ["-1", "-1"])[1]
     flow_index = int(flow_index)
     # log_path = Path(simulator_configs['report_log_addr'])
 
