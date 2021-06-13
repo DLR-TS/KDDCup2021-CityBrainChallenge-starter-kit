@@ -6,6 +6,8 @@ __pycache__/
 */__pycache__
 .idea
 out/*.json
+log/*.log
+log/*.json
 # Distribution / packaging
 .Python
 build/
