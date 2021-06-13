@@ -213,15 +213,16 @@ class TestAgent():
 
 
         for veh, vehData in laneVehs[lane]:
-            if 'route' in vehData and road != vehData['route'][-1]:
+            route = vehData.get('route')
+            if route is None or road != route[-1]:
                 speed = vehData['speed'][0]
                 stoplineDist = length - vehData['distance'][0]
                 if (speed < SLOW_THRESH[now_step // SLICE] * speedLimit) or (stoplineDist / speedLimit < STOP_LINE_HEADWAY[now_step // SLICE]):
-                    if not self.targetLaneJammed(veh, vehData['route'], dstLanesJammed):
+                    if not self.targetLaneJammed(veh, route, dstLanesJammed):
                         # delayIndex is impacted more strongly by vehicles with short routes
                         # median t_ff is ~720
-                        fjPenalty = self.getFutureJamPenalty(vehData['route'], now_step)
-                        laneQ += (route_length_weight / vehData['t_ff'][0]) / fjPenalty
+                        fjPenalty = self.getFutureJamPenalty(route, now_step)
+                        laneQ += (route_length_weight / vehData.get('t_ff', [route_length_weight])[0]) / fjPenalty
                         vehs.append(veh)
 
                     # count all vehicles without penalties
@@ -274,7 +275,7 @@ class TestAgent():
             return False
         elif len(dstLanesJammed) == 3:
             return True
-        elif len(route) == 1:
+        elif route is None or len(route) == 1:
             # route does not go past the junction
             return False
         elif len(route) == 2:
@@ -297,15 +298,16 @@ class TestAgent():
 
     def getFutureJamPenalty(self, route, now_step):
         result = 1.0
-        saturated = SATURATED_THRESHOLD[now_step // SLICE]
-        for i in range(1, min(len(route), int(FUTURE_JAM_LOOKAHEAD[now_step // SLICE] + 0.5))):
-            junction = self.roads[route[i]]['end_inter']
-            totals = self.total_queues.get(junction, [])
-            if len(totals) > 1:
-                prevStepQueue = totals[-2]
-                # discount future jams
-                result *= max(1, prevStepQueue / saturated)
-            saturated += SATURATION_INC[now_step // SLICE]
+        if route is not None:
+            saturated = SATURATED_THRESHOLD[now_step // SLICE]
+            for i in range(1, min(len(route), int(FUTURE_JAM_LOOKAHEAD[now_step // SLICE] + 0.5))):
+                junction = self.roads[route[i]]['end_inter']
+                totals = self.total_queues.get(junction, [])
+                if len(totals) > 1:
+                    prevStepQueue = totals[-2]
+                    # discount future jams
+                    result *= max(1, prevStepQueue / saturated)
+                saturated += SATURATION_INC[now_step // SLICE]
         return result
 
     def act(self, obs):
@@ -313,50 +315,26 @@ class TestAgent():
         # info is returned 'info' of env.step()
         observations = obs['observations']
         info = obs['info']
-        #print(obs)
 
         # select the now_step
-        now_step = info['step']
+        now_step = info['step'] * 10
         actions = {}
 
         laneVehs = defaultdict(list) # lane -> (veh, vehData)
-        roadUsage = defaultdict(int)
-        ttFF = []
-        for veh, vehData in info.items():
-            if veh == "step":
-                continue
-            laneVehs[vehData['drivable'][0]].append((veh, vehData))
-            if 'route' in vehData and vehData['road'][0] != vehData['route'][-1]:
-                ttFF.append(vehData['t_ff'][0])
-                for r in vehData['route'][vehData['route'].index(vehData['road'][0]):]:
-                    roadUsage[r] += 1
-        #ttFFMean = sorted(ttFF)[len(ttFF) // 2] if ttFF else ROUTE_LENGTH_WEIGHT
-        #ttFFMean = sum(ttFF) / len(ttFF) if ttFF else ROUTE_LENGTH_WEIGHT
-        #print(ttFFMean)
+        for lane, vehicles in list(observations.values())[0].items():
+            speedSum = 0
+            numVehs = len(vehicles)
+            for veh in vehicles:
+                laneVehs[lane].append((veh, info[veh]))
+                speedSum += info[veh]['speed'][0]
+            road = int(lane / 100)
+            speedLimit = self.roads[road]['speed_limit']
+            length = self.roads[road]['length']
+            relSpeed = (speedSum / numVehs) / speedLimit if numVehs > 0 else 1.0
+            # road is full and slow
+            if numVehs * VEH_LENGTH > length * JAM_THRESH[now_step // SLICE] and relSpeed < SPEED_THRESH[now_step // SLICE]:
+                self.jammed_lanes[lane] += JAM_BONUS[now_step // SLICE]
         ttFFMean = ROUTE_LENGTH_WEIGHT[now_step // SLICE]
-        #for tls_road, dist in sorted(self.tls_dist.items(), key=lambda i: i[1][2])[:100]:
-        #    if roadUsage[tls_road] > 100:
-        #        print(tls_road, dist, roadUsage[tls_road])
-
-        # detect jammed lanes
-        checked_lanes = set()
-        for agent in self.agent_list:
-            self.total_queues[agent].append(0)
-            for lane in self.intersections[agent]['lanes']:
-                if lane >= 0 and lane not in checked_lanes:
-                    checked_lanes.add(lane)
-                    speedSum = 0
-                    numVehs = len(laneVehs[lane])
-                    for veh, vehData in laneVehs[lane]:
-                        speedSum += vehData['speed'][0]
-                    road = int(lane / 100)
-                    speedLimit = self.roads[road]['speed_limit']
-                    length = self.roads[road]['length']
-                    relSpeed = (speedSum / numVehs) / speedLimit if numVehs > 0 else 1.0
-                    # road is full and slow
-                    if numVehs * VEH_LENGTH > length * JAM_THRESH[now_step // SLICE] and relSpeed < SPEED_THRESH[now_step // SLICE]:
-                        self.jammed_lanes[lane] += JAM_BONUS[now_step // SLICE]
-
 
         # get actions
         for agent in self.agent_list:
@@ -370,6 +348,7 @@ class TestAgent():
                 except:
                     pass
 
+            self.total_queues[agent].append(0)
             step_diff = now_step - self.last_change_step[agent]
 
             DEBUGID = None # 42381408549
