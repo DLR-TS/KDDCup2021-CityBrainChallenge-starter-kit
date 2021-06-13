@@ -77,7 +77,7 @@ class TestAgent():
     # don't modify this function.
     # agent_list is a list of agent_id
     def load_agent_list(self,agent_list):
-        self.agent_list = agent_list
+        self.agent_list = [int(a) for a in agent_list]
         self.now_phase = dict.fromkeys(self.agent_list,1)
         self.last_change_step = dict.fromkeys(self.agent_list,0)
 
@@ -213,8 +213,7 @@ class TestAgent():
 
 
         for veh, vehData in laneVehs[lane]:
-            lastEdge = vehData['route'][-1]
-            if road != lastEdge:
+            if 'route' in vehData and road != vehData['route'][-1]:
                 speed = vehData['speed'][0]
                 stoplineDist = length - vehData['distance'][0]
                 if (speed < SLOW_THRESH[now_step // SLICE] * speedLimit) or (stoplineDist / speedLimit < STOP_LINE_HEADWAY[now_step // SLICE]):
@@ -254,8 +253,7 @@ class TestAgent():
                 predRoad = int(predLane / 100)
                 predLength = self.roads[predRoad]['length']
                 for veh, vehData in laneVehs[predLane]:
-                    lastEdge = vehData['route'][-1]
-                    if predRoad != lastEdge:
+                    if 'route' in vehData and predRoad != vehData['route'][-1]:
                         speed = vehData['speed'][0]
                         stoplineDist = length + predLength - vehData['distance'][0]
                         if (speed < SLOW_THRESH[now_step // SLICE] * speedLimit) or (stoplineDist / speedLimit < STOP_LINE_HEADWAY[now_step // SLICE]):
@@ -318,15 +316,17 @@ class TestAgent():
         #print(obs)
 
         # select the now_step
-        now_step = list(observations.values())[0][0]
+        now_step = info['step']
         actions = {}
 
         laneVehs = defaultdict(list) # lane -> (veh, vehData)
         roadUsage = defaultdict(int)
         ttFF = []
         for veh, vehData in info.items():
+            if veh == "step":
+                continue
             laneVehs[vehData['drivable'][0]].append((veh, vehData))
-            if vehData['road'][0] != vehData['route'][-1]:
+            if 'route' in vehData and vehData['road'][0] != vehData['route'][-1]:
                 ttFF.append(vehData['t_ff'][0])
                 for r in vehData['route'][vehData['route'].index(vehData['road'][0]):]:
                     roadUsage[r] += 1

@@ -1,7 +1,9 @@
 class gym_cfg():
     def __init__(self):
         self.cfg = {
-            'observation_features':['lane_speed','lane_vehicle_num']
+            'observation_features':['lane_vehicle_num','classic'],
+            'observation_dimension':40,
+            'custom_observation' : False
         }
 
 SWITCH_THRESH = [0.5, 0.5, 0.4] #  difference in queue lengths which triggers switch optimized -0.1 0.9
