@@ -1,4 +1,3 @@
-import CBEngine
 import json
 import traceback
 import argparse
@@ -23,7 +22,7 @@ def pretty_files(path):
     return "[{}]".format(", ".join(contents))
 
 
-def resolve_dirs(root_path: str, input_dir: str = None, output_dir: str = None):
+def resolve_dirs(root_path: str, input_dir: str = None, output_dir: str = None, log_dir:str=None):
     root_path = Path(root_path)
 
     logger.info(f"root_path={pretty_files(root_path)}")
@@ -31,12 +30,13 @@ def resolve_dirs(root_path: str, input_dir: str = None, output_dir: str = None):
     if input_dir is not None:
         input_dir = Path(input_dir)
         output_dir = Path(output_dir)
-
+        log_dir = Path(log_dir)
         submission_dir = input_dir
         scores_dir = output_dir
 
         logger.info(f"input_dir={pretty_files(input_dir)}")
         logger.info(f"output_dir={pretty_files(output_dir)}")
+        logger.info(f"log_dir={pretty_files(log_dir)}")
     else:
         raise ValueError('need input dir')
 
@@ -49,7 +49,7 @@ def resolve_dirs(root_path: str, input_dir: str = None, output_dir: str = None):
     if not submission_dir.is_dir():
         logger.warning(f"submission_dir={submission_dir} does not exist")
 
-    return submission_dir, scores_dir
+    return submission_dir, scores_dir, log_dir
 
 
 def load_agent_submission(submission_dir: Path):
@@ -58,6 +58,7 @@ def load_agent_submission(submission_dir: Path):
     # find agent.py
     module_path = None
     cfg_path = None
+    class_path = None
     for dirpath, dirnames, file_names in os.walk(submission_dir):
         for file_name in [f for f in file_names if f.endswith(".py")]:
             if file_name == "agent.py":
@@ -65,6 +66,9 @@ def load_agent_submission(submission_dir: Path):
 
             if file_name == "gym_cfg.py":
                 cfg_path = dirpath
+
+            if file_name == 'CBEngine_round3.py':
+                class_path = dirpath
     # error
     assert (
         module_path is not None
@@ -72,16 +76,20 @@ def load_agent_submission(submission_dir: Path):
     assert(
         cfg_path is not None
     ), "Cannot find file named gym_cfg.py, please check your submission zip"
+    assert (
+        class_path is not None
+    ), "Cannot find file named CBEngine_round3.py, please check your submission zip"
     sys.path.append(str(module_path))
 
 
     # This will fail w/ an import error of the submissions directory does not exist
     import gym_cfg as gym_cfg_submission
     import agent as agent_submission
+    from CBEngine_round3 import CBEngine_round3 as CBEngine_rllib_class
 
     gym_cfg_instance = gym_cfg_submission.gym_cfg()
 
-    return  agent_submission.agent_specs,gym_cfg_instance
+    return  agent_submission.agent_specs,gym_cfg_instance,CBEngine_rllib_class
 
 
 def read_config(cfg_file):
@@ -275,20 +283,21 @@ def process_score(log_path,roads,step,scores_dir):
             json.dump(result_write,f_out,indent= 2)
 
     return result_write['data']['total_served_vehicles'],result_write['data']['delay_index']
-def run_simulation(agent_spec, simulator_cfg_file, gym_cfg,metric_period,scores_dir,threshold):
+def run_simulation(agent_spec, simulator_cfg_file, gym_cfg,metric_period,scores_dir,threshold,CBEngine_rllib_class,log_path):
     logger.info("\n")
     logger.info("*" * 40)
 
     # get gym instance
     gym_configs = gym_cfg.cfg
     simulator_configs = read_config(simulator_cfg_file)
-    env = gym.make(
-        'CBEngine-v0',
-        simulator_cfg_file=simulator_cfg_file,
-        thread_num=1,
-        gym_dict = gym_configs,
-        metric_period = metric_period
-    )
+    env_config = {
+        "simulator_cfg_file": simulator_cfg_file,
+        "thread_num": args.thread_num,
+        "gym_dict": gym_configs,
+        "metric_period": args.metric_period,
+        "vehicle_info_path":log_path
+    }
+    env = CBEngine_rllib_class(env_config)
     scenario = [
         'test'
     ]
@@ -297,27 +306,29 @@ def run_simulation(agent_spec, simulator_cfg_file, gym_cfg,metric_period,scores_
     roadnet_path = Path(simulator_configs['road_file_addr'])
     intersections, roads, agents = process_roadnet(roadnet_path)
     # env.set_warning(0)
-    # env.set_log(0)
-    # env.set_info(0)
+    env.set_log(1)
+    env.set_info(1)
     # env.set_ui(0)
     # get agent instance
-    observations, infos = env.reset()
+    infos = {'step':0}
+
+    observations = env.reset()
     agent_id_list = []
-    for k in observations:
-        agent_id_list.append(int(k.split('_')[0]))
+    for k in observations.keys():
+        agent_id_list.append(k)
     agent_id_list = list(set(agent_id_list))
     agent = agent_spec[scenario[0]]
     agent.load_agent_list(agent_id_list)
     agent.load_roadnet(intersections, roads, agents)
-    done = False
+    dones = {}
+    dones['__all__']=False
     # simulation
     step = 0
-    log_path = Path(simulator_configs['report_log_addr'])
     sim_start = time.time()
 
     tot_v  = -1
     d_i = -1
-    while not done:
+    while not dones['__all__']:
         actions = {}
         step+=1
         all_info = {
@@ -326,19 +337,16 @@ def run_simulation(agent_spec, simulator_cfg_file, gym_cfg,metric_period,scores_
         }
         actions = agent.act(all_info)
         observations, rewards, dones, infos = env.step(actions)
+        infos['step'] = step
         if(step * 10 % metric_period == 0):
             try:
                 tot_v , d_i = process_score(log_path,roads,step*10-1,scores_dir)
-                print(step, "di", d_i, "tot_v", tot_v)
             except Exception as e:
                 print(e)
                 print('Error in process_score. Maybe no log')
                 continue
         if(d_i > threshold):
             break
-        for agent_id in agent_id_list:
-            if(dones[agent_id]):
-                done = True
     sim_end = time.time()
     logger.info("simulation cost : {}s".format(sim_end-sim_start))
     # read log file
@@ -422,7 +430,11 @@ if __name__ == "__main__":
         prog="evaluation",
         description="1"
     )
-
+    parser.add_argument(
+        "--thread_num",
+        type=int,
+        default=8
+    )
     parser.add_argument(
         "--input_dir",
         help="The path to the directory containing the reference "
@@ -449,7 +461,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--metric_period",
         help="period of scoring",
-        default=200,
+        default=3600,
         type=int
     )
     parser.add_argument(
@@ -458,7 +470,12 @@ if __name__ == "__main__":
         default=1.6,
         type=float
     )
-
+    parser.add_argument(
+        "--vehicle_info_path",
+        help="path to log vehicle info to scoring",
+        default='./log',
+        type=str
+    )
     # result to be written in out/result.json
     result = {
         "success": False,
@@ -469,15 +486,19 @@ if __name__ == "__main__":
         }
     }
 
+
+    ####################
+    # modify sim cfg
     args = parser.parse_args()
     msg = None
     metric_period = args.metric_period
     threshold = args.threshold
     # get input and output directory
     simulator_cfg_file = args.sim_cfg
+    vehicle_info_path = args.vehicle_info_path
     try:
-        submission_dir, scores_dir = resolve_dirs(
-            os.path.dirname(__file__), args.input_dir, args.output_dir
+        submission_dir, scores_dir, log_dir = resolve_dirs(
+            os.path.dirname(__file__), args.input_dir, args.output_dir, args.vehicle_info_path
         )
     except Exception as e:
         msg = format_exception(e)
@@ -487,19 +508,39 @@ if __name__ == "__main__":
 
     # get agent and configuration of gym
     try:
-        agent_spec,gym_cfg = load_agent_submission(submission_dir)
+        agent_spec,gym_cfg,CBEngine_rllib_class = load_agent_submission(submission_dir)
     except Exception as e:
         msg = format_exception(e)
         result['error_msg'] = msg
         json.dump(result,open(scores_dir / "scores.json",'w'),indent=2)
         raise AssertionError()
 
+    ####################
+    # modify sim cfg
+    simulator_configs = read_config(simulator_cfg_file)
+    flow_index = re.findall('[0-9]+',simulator_configs['vehicle_file_addr'])[1]
+    flow_index = int(flow_index)
+    # log_path = Path(simulator_configs['report_log_addr'])
+
+    log_path = Path(args.vehicle_info_path) / str(flow_index)
+    scores_dir = Path(args.output_dir) / str(flow_index)
+    if (not os.path.exists(log_path)):
+        os.makedirs(log_path)
+    if (not os.path.exists(scores_dir)):
+        os.makedirs(scores_dir)
+    logger.info("log_path : {}".format(log_path))
+    logger.info('scores_path : {}'.format(scores_dir))
+    # change cfg
+
+
+    ##################
+
     logger.info(f"Loaded user agent instance={agent_spec}")
 
     # simulation
     start_time = time.time()
     try:
-        scores = run_simulation(agent_spec, simulator_cfg_file, gym_cfg,metric_period,scores_dir,threshold)
+        scores = run_simulation(agent_spec, simulator_cfg_file, gym_cfg,metric_period,scores_dir,threshold,CBEngine_rllib_class,log_path)
     except Exception as e:
         msg = format_exception(e)
         result['error_msg'] = msg

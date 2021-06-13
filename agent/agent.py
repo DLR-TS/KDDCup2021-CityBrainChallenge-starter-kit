@@ -17,7 +17,7 @@ with open(path + "/gym_cfg.py", "r") as f:
 class TestAgent():
     def __init__(self):
         self.now_phase = {}
-        self.green_sec = 40
+        self.green_sec = 2
         self.max_phase = 8
         self.last_change_step = {}
         self.agent_list = []
@@ -68,29 +68,16 @@ class TestAgent():
         info = obs['info']
         actions = {}
 
+        now_step = info['step']
         # a simple fixtime agent
-
-        # preprocess observations
-        observations_for_agent = {}
-        for key,val in observations.items():
-            observations_agent_id = int(key.split('_')[0])
-            observations_feature = key[key.find('_')+1:]
-            if(observations_agent_id not in observations_for_agent.keys()):
-                observations_for_agent[observations_agent_id] = {}
-            observations_for_agent[observations_agent_id][observations_feature] = val
 
         # get actions
         for agent in self.agent_list:
             # select the now_step
-            for k,v in observations_for_agent[agent].items():
-                now_step = v[0]
-                break
             step_diff = now_step - self.last_change_step[agent]
             if(step_diff >= self.green_sec):
                 self.now_phase[agent] = self.now_phase[agent] % self.max_phase + 1
                 self.last_change_step[agent] = now_step
-
-
             actions[agent] = self.now_phase[agent]
         # print(self.intersections,self.roads,self.agents)
         return actions
@@ -103,4 +90,3 @@ agent_specs = dict.fromkeys(scenario_dirs, None)
 for i, k in enumerate(scenario_dirs):
     # initialize an AgentSpec instance with configuration
     agent_specs[k] = TestAgent()
-
