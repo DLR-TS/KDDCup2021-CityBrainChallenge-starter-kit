@@ -221,8 +221,9 @@ class TestAgent():
                     if not self.targetLaneJammed(veh, route, dstLanesJammed):
                         # delayIndex is impacted more strongly by vehicles with short routes
                         # median t_ff is ~720
-                        fjPenalty = self.getFutureJamPenalty(route, now_step)
-                        laneQ += (route_length_weight / vehData.get('t_ff', [route_length_weight])[0]) / fjPenalty
+#                        fjPenalty = self.getFutureJamPenalty(route, now_step)
+#                        laneQ += (route_length_weight + 10) / (now_step - vehData['start_time'][0] + 10) / fjPenalty
+                        laneQ += 1
                         vehs.append(veh)
 
                     # count all vehicles without penalties
@@ -254,7 +255,7 @@ class TestAgent():
                 predRoad = int(predLane / 100)
                 predLength = self.roads[predRoad]['length']
                 for veh, vehData in laneVehs[predLane]:
-                    if 'route' in vehData and predRoad != vehData['route'][-1]:
+                    if 'route' not in vehData or predRoad != vehData['route'][-1]:
                         speed = vehData['speed'][0]
                         stoplineDist = length + predLength - vehData['distance'][0]
                         if (speed < SLOW_THRESH[now_step // SLICE] * speedLimit) or (stoplineDist / speedLimit < STOP_LINE_HEADWAY[now_step // SLICE]):
