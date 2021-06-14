@@ -398,6 +398,7 @@ class TestAgent():
 
         # print(self.intersections,self.roads,self.agents)
         #print(now_step, actions)
+        print(now_step, SLICE, now_step // SLICE, SWITCH_THRESH[now_step // SLICE])
         return actions
 
 scenario_dirs = [
