@@ -6,9 +6,10 @@ import subprocess
 import atexit
 import json
 import uuid
+from collections import defaultdict
 
 
-def start_evaluation(param, names, args):
+def start_evaluation(param, names, args, flow="0"):
     if args.agent.endswith("/"):
         agent = args.agent[:-1]
     else:
@@ -19,6 +20,7 @@ def start_evaluation(param, names, args):
         par_agent = agent + "_".join([("%s_%.3f" % (n[:3], p)).rstrip("0") for n, p in zip(names, param)])
     if args.max_time != 3600:
         par_agent += "_t%s" % args.max_time
+    par_agent += "_f%s" % flow
     print("copying", agent, "to", par_agent)
     shutil.rmtree(par_agent, ignore_errors=True)
     os.makedirs(par_agent, exist_ok=True)
@@ -45,11 +47,14 @@ def start_evaluation(param, names, args):
             if ls and ls[0] == 'max_time_epoch':
                 ls[2] = "%s" % args.max_time
                 line = " ".join(ls) + "\n"
+            if ls and ls[0] == 'vehicle_file_addr':
+                ls[2] = ls[2].replace("flow0.txt", "flow%s.txt" % flow)
+                line = " ".join(ls) + "\n"
             cfg.write(line)
-    return subprocess.Popen("docker run -v $PWD:/starter-kit kdd /starter-kit/run.sh %s" % par_agent, shell=True), par_agent, list(param)
+    return subprocess.Popen("docker run -v $PWD:/starter-kit kdd /starter-kit/run.sh %s" % par_agent, shell=True), par_agent, tuple(param), flow
 
-def get_score(par_agent):
-    scores = json.load(open(os.path.join(par_agent, "0", "scores.json")))
+def get_score(par_agent, flow="0"):
+    scores = json.load(open(os.path.join(par_agent, flow, "scores.json")))
     return scores["data"]["delay_index"]
 
 def run_evaluation(par, names, args):
@@ -60,24 +65,31 @@ def run_evaluation(par, names, args):
 def parallel_single_parameter(names, init, ranges, args):
     values = list(init)
     for idx in range(len(init)):
-        scores = {}
+        scores = defaultdict(dict)
         step = (ranges[idx][1] - ranges[idx][0]) / args.steps
         procs = []
         for i in range(args.steps):
             values[idx] = ranges[idx][0] + i * step
-            procs.append(start_evaluation(values, names, args))
-            if args.threads and len(procs) == args.threads:
-                for proc, a, par in procs:
-                    proc.wait()
-                    scores[a] = (par, get_score(a))
-                procs = []
-        for proc, a, par in procs:
+            for f in range(args.flows):
+                flow = str(f)
+                procs.append(start_evaluation(values, names, args, flow))
+                if args.threads and len(procs) == args.threads:
+                    for proc, agent_dir, par, flow in procs:
+                        proc.wait()
+                        scores[flow][par] = get_score(agent_dir, flow)
+                    procs = []
+        for proc, agent_dir, par, flow in procs:
             proc.wait()
-            scores[a] = (par, get_score(a))
+            scores[flow][par] = get_score(agent_dir, flow)
         procs = []
-        min_agent, (min_par, min_score) = min(scores.items(), key=lambda i: i[1][1])
         print("scores", scores)
-        print("min", min_agent, min_par, min_score)
+        agent_rank = defaultdict(int)
+        for f in range(args.flows):
+            for rank, (par, _) in enumerate(sorted(scores[str(f)].items(), key=lambda i: i[1])):
+                agent_rank[par] += rank
+        print("ranks", agent_rank)
+        min_par = min(agent_rank.items(), key=lambda i: i[1])[0]
+        print("min", min_par)
         values[idx] = min_par[idx]
     return values
 
@@ -86,6 +98,7 @@ if __name__ == "__main__":
     parser.add_argument("agent")
     parser.add_argument("-t", "--threads", type=int, default=10)
     parser.add_argument("-s", "--steps", type=int, default=10)
+    parser.add_argument("-f", "--flows", type=int, default=3)
     parser.add_argument("-a", "--max-time", type=int, default=3600)
     parser.add_argument("-c", "--simulator-cfg", default="cfg/simulator.cfg")
     parser.add_argument("-m", "--method", default="plain")
