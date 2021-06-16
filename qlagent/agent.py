@@ -4,7 +4,10 @@ from collections import defaultdict
 from gym_cfg import HEADWAY, SLOW_THRESH, JAM_THRESH, MIN_CHECK_LENGTH, JAM_BONUS, MAX_GREEN_SEC, PREFER_DUAL_THRESHOLD
 from gym_cfg import SPEED_THRESH, STOP_LINE_HEADWAY, BUFFER_THRESH, ROUTE_LENGTH_WEIGHT, SWITCH_THRESH
 from gym_cfg import FUTURE_JAM_LOOKAHEAD, SATURATED_THRESHOLD, SATURATION_INC
-import routes
+try:
+    from routes import dist
+except:
+    dist = {}
 
 
 PHASE_LANES = {
@@ -214,7 +217,7 @@ class TestAgent():
 
 
         for veh, vehData in laneVehs[lane]:
-            route = routes.dist.get(road)
+            route = None #dist.get(road)
             speed = vehData['speed'][0]
             stoplineDist = length - vehData['distance'][0]
             if (speed < SLOW_THRESH[now_step // SLICE] * speedLimit) or (stoplineDist / speedLimit < STOP_LINE_HEADWAY[now_step // SLICE]):
@@ -223,8 +226,8 @@ class TestAgent():
                 # median t_ff is ~720
                 #baseWeight = (route_length_weight / vehData.get('t_ff', [route_length_weight])[0])
                 baseWeight = 1.
-                #fjPenalty = self.getFutureJamPenalty(route, now_step)
-                fjPenalty = 1.
+                fjPenalty = self.getFutureJamPenalty(route, now_step)
+                #fjPenalty = 1.
                 laneQ +=  (1. - tlJamProb) * baseWeight / fjPenalty
                 vehs.append(veh)
 
@@ -303,18 +306,22 @@ class TestAgent():
         return total
 
     def getFutureJamPenalty(self, route, now_step):
-        result = 1.0
-        if route is not None:
+        if route is None:
+            return 1.
+        total = 0
+        for subroute, prob in route.items():
+            result = 1.0
             saturated = SATURATED_THRESHOLD[now_step // SLICE]
-            for i in range(1, min(len(route), int(FUTURE_JAM_LOOKAHEAD[now_step // SLICE] + 0.5))):
-                junction = self.roads[route[i]]['end_inter']
+            for i in range(1, min(len(subroute), int(FUTURE_JAM_LOOKAHEAD[now_step // SLICE] + 0.5))):
+                junction = self.roads[subroute[i]]['end_inter']
                 totals = self.total_queues.get(junction, [])
                 if len(totals) > 1:
                     prevStepQueue = totals[-2]
                     # discount future jams
                     result *= max(1, prevStepQueue / saturated)
                 saturated += SATURATION_INC[now_step // SLICE]
-        return result
+            total += result * prob
+        return total
 
     def act(self, obs):
         # observations is returned 'observation' of env.step()

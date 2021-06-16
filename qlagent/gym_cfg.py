@@ -8,7 +8,7 @@ class gym_cfg():
 
 SWITCH_THRESH = [0.5, 0.5, 0.4] #  difference in queue lengths which triggers switch optimized -0.1 0.9#
 ROUTE_LENGTH_WEIGHT = [689.0, 690, 690.0] #   to be optimized 685 695#
-MIN_CHECK_LENGTH = [20.0, 20, 20.0] #   look upstream to find more queued vehicles if a lane is shorter than this optimized 0 50
+MIN_CHECK_LENGTH = [26.0, 26, 26.0] #   look upstream to find more queued vehicles if a lane is shorter than this optimized 10 50
 JAM_THRESH = [0.91, 0.91, 0.91] #   at which relative occupancy a lane is considered jammed, to be optimized 0.9 0.95#
 HEADWAY = [2.1, 1.5, 1.5] #   to be optimized 1.2 2.2#
 SLOW_THRESH = [0.07, 0.1, 0.09999999999999999] #   at which relative speed a vehicle is considered slow, to be optimized 0.05 0.15#
