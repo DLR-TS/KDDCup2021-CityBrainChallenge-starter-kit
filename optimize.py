@@ -6,6 +6,7 @@ import subprocess
 import atexit
 import json
 import uuid
+import glob
 from collections import defaultdict
 
 
@@ -25,8 +26,8 @@ def start_evaluation(param, names, args, flow="0"):
     shutil.rmtree(par_agent, ignore_errors=True)
     os.makedirs(par_agent, exist_ok=True)
     open(os.path.join(par_agent, ".gitignore"), "w").close()
-    shutil.copy2(os.path.join(agent, "agent.py"), par_agent)
-    shutil.copy2(os.path.join(agent, "CBEngine_round3.py"), par_agent)
+    for py in glob.glob(os.path.join(agent, "*.py")):
+        shutil.copy2(py, par_agent)
     with open(os.path.join(agent, "gym_cfg.py")) as cfg_in, open(os.path.join(par_agent, "gym_cfg.py"), "w") as cfg:
         for line in cfg_in:
             ls = line.split()

@@ -4,6 +4,7 @@ from collections import defaultdict
 from gym_cfg import HEADWAY, SLOW_THRESH, JAM_THRESH, MIN_CHECK_LENGTH, JAM_BONUS, MAX_GREEN_SEC, PREFER_DUAL_THRESHOLD
 from gym_cfg import SPEED_THRESH, STOP_LINE_HEADWAY, BUFFER_THRESH, ROUTE_LENGTH_WEIGHT, SWITCH_THRESH
 from gym_cfg import FUTURE_JAM_LOOKAHEAD, SATURATED_THRESHOLD, SATURATION_INC
+import routes
 
 
 PHASE_LANES = {
@@ -213,20 +214,22 @@ class TestAgent():
 
 
         for veh, vehData in laneVehs[lane]:
-            route = vehData.get('route')
-            if route is None or road != route[-1]:
-                speed = vehData['speed'][0]
-                stoplineDist = length - vehData['distance'][0]
-                if (speed < SLOW_THRESH[now_step // SLICE] * speedLimit) or (stoplineDist / speedLimit < STOP_LINE_HEADWAY[now_step // SLICE]):
-                    if not self.targetLaneJammed(veh, route, dstLanesJammed):
-                        # delayIndex is impacted more strongly by vehicles with short routes
-                        # median t_ff is ~720
-                        fjPenalty = self.getFutureJamPenalty(route, now_step)
-                        laneQ += (route_length_weight / vehData.get('t_ff', [route_length_weight])[0]) / fjPenalty
-                        vehs.append(veh)
+            route = routes.dist.get(road)
+            speed = vehData['speed'][0]
+            stoplineDist = length - vehData['distance'][0]
+            if (speed < SLOW_THRESH[now_step // SLICE] * speedLimit) or (stoplineDist / speedLimit < STOP_LINE_HEADWAY[now_step // SLICE]):
+                tlJamProb = self.targetLaneJammed(veh, route, dstLanesJammed)
+                # delayIndex is impacted more strongly by vehicles with short routes
+                # median t_ff is ~720
+                #baseWeight = (route_length_weight / vehData.get('t_ff', [route_length_weight])[0])
+                baseWeight = 1.
+                #fjPenalty = self.getFutureJamPenalty(route, now_step)
+                fjPenalty = 1.
+                laneQ +=  (1. - tlJamProb) * baseWeight / fjPenalty
+                vehs.append(veh)
 
-                    # count all vehicles without penalties
-                    self.total_queues[agent][-1] += 1
+                # count all vehicles without penalties
+                self.total_queues[agent][-1] += 1
 
         if length < MIN_CHECK_LENGTH[now_step // SLICE]:
             # extend queue upstream
@@ -254,7 +257,7 @@ class TestAgent():
                 predRoad = int(predLane / 100)
                 predLength = self.roads[predRoad]['length']
                 for veh, vehData in laneVehs[predLane]:
-                    if 'route' in vehData and predRoad != vehData['route'][-1]:
+                    if 'route' not in vehData or predRoad != vehData['route'][-1]:
                         speed = vehData['speed'][0]
                         stoplineDist = length + predLength - vehData['distance'][0]
                         if (speed < SLOW_THRESH[now_step // SLICE] * speedLimit) or (stoplineDist / speedLimit < STOP_LINE_HEADWAY[now_step // SLICE]):
@@ -272,29 +275,32 @@ class TestAgent():
 
     def targetLaneJammed(self, veh, route, dstLanesJammed):
         if len(dstLanesJammed) == 0:
-            return False
-        elif len(dstLanesJammed) == 3:
-            return True
-        elif route is None or len(route) == 1:
-            # route does not go past the junction
-            return False
-        elif len(route) == 2:
-            # route ends after beyond the current junction
-            # all target lanes are permitted
-            allJammed = len(dstLanesJammed) == 3
-            return allJammed
-        else:
-            lane = self.getTurnLane(route[1], route[2])
-            if lane is None:
-                # only signalized nodes define 'lanes'
-                # we already know that at least one lane is jammed so let's assume the worst
-                return True
-            elif lane in dstLanesJammed:
-                #print("targetLaneJammed for veh %s with route %s, targetLane=%s inRoad=%s outRoad=%s" % (
-                #    veh, route, lane, route[1], route[2]))
-                return True
+            return 0.
+        if len(dstLanesJammed) == 3:
+            return 1.
+        if route is None:
+            return 1.
+        total = 0.
+        for subroute, prob in route.items():
+            if len(subroute) == 1:
+                # route does not go past the junction
+                continue
+            elif len(subroute) == 2:
+                # route ends after beyond the current junction
+                # all target lanes are permitted
+                if len(dstLanesJammed) == 3:
+                    total += prob
             else:
-                return False
+                lane = self.getTurnLane(subroute[1], subroute[2])
+                if lane is None:
+                    # only signalized nodes define 'lanes'
+                    # we already know that at least one lane is jammed so let's assume the worst
+                    total += prob
+                elif lane in dstLanesJammed:
+                    #print("targetLaneJammed for veh %s with route %s, targetLane=%s inRoad=%s outRoad=%s" % (
+                    #    veh, route, lane, route[1], route[2]))
+                    total += prob
+        return total
 
     def getFutureJamPenalty(self, route, now_step):
         result = 1.0
