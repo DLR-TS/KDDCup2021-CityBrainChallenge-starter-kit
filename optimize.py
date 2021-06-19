@@ -10,6 +10,9 @@ import glob
 from collections import defaultdict
 
 
+SLICE = 600
+
+
 def start_evaluation(param, names, args, flow="0"):
     if args.agent.endswith("/"):
         agent = args.agent[:-1]
@@ -35,7 +38,7 @@ def start_evaluation(param, names, args, flow="0"):
                 if ls and ls[0] == n:
                     assign, comment = line.split("#")
                     slices = json.loads(assign.split("=")[1])
-                    slices[args.max_time // 1200 - 1] = val
+                    slices[(args.max_time - 1) // SLICE] = val
                     line = n + " = " + json.dumps(slices) + " # " + comment
                     break
             cfg.write(line)
@@ -90,7 +93,7 @@ def parallel_single_parameter(names, init, ranges, args):
                 agent_rank[par] += rank
         print("ranks", agent_rank)
         min_par = min(agent_rank.items(), key=lambda i: i[1])[0]
-        print("min", min_par)
+        print("min", min_par, [scores[str(f)][min_par] for f in range(args.flows)])
         values[idx] = min_par[idx]
     return values
 
@@ -116,7 +119,7 @@ if __name__ == "__main__":
             try:
                 assign = line.split("#")[0]
                 slices = json.loads(assign.split("=")[1])
-                initial = slices[args.max_time // 1200 - 1]
+                initial = slices[(args.max_time - 1) // SLICE]
                 r = (float(ls[-2]), float(ls[-1]))
             except:
                 pass

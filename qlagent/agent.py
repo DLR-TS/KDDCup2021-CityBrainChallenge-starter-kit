@@ -52,7 +52,7 @@ PRED_LANES = {
         }
 
 VEH_LENGTH = 5.0  # length read from infos, should be valid, optimize JAM_THRESH instead
-SLICE = 1200
+SLICE = 600
 
 # (inEdge, outEdge) -> lane on inEdge
 TURN_LANE_CACHE = {}
@@ -76,6 +76,7 @@ class TestAgent():
         self.tls_dist = {}
         # agent -> total queue size each action step
         self.total_queues = defaultdict(list)
+        self.vehicle_routes = {}
 
     ################################
     # don't modify this function.
@@ -217,7 +218,9 @@ class TestAgent():
 
 
         for veh, vehData in laneVehs[lane]:
-            route = None #dist.get(road)
+#            route = self.routedist.get(road, dist.get(road))
+#            route = self.routedist.get(road)
+            route = None
             speed = vehData['speed'][0]
             stoplineDist = length - vehData['distance'][0]
             if (speed < SLOW_THRESH[now_step // SLICE] * speedLimit) or (stoplineDist / speedLimit < STOP_LINE_HEADWAY[now_step // SLICE]):
@@ -226,8 +229,8 @@ class TestAgent():
                 # median t_ff is ~720
                 #baseWeight = (route_length_weight / vehData.get('t_ff', [route_length_weight])[0])
                 baseWeight = 1.
-                fjPenalty = self.getFutureJamPenalty(route, now_step)
-                #fjPenalty = 1.
+                #fjPenalty = self.getFutureJamPenalty(route, now_step)
+                fjPenalty = 1.
                 laneQ +=  (1. - tlJamProb) * baseWeight / fjPenalty
                 vehs.append(veh)
 
@@ -336,18 +339,50 @@ class TestAgent():
         laneVehs = defaultdict(list) # lane -> (veh, vehData)
         for lane, vehicles in list(observations.values())[0].items():
             speedSum = 0
+            road = int(lane / 100)
             numVehs = len(vehicles)
+            length = self.roads[road]['length']
+            speedLimit = self.roads[road]['speed_limit']
             for veh in vehicles:
                 laneVehs[lane].append((veh, info[veh]))
                 speedSum += info[veh]['speed'][0]
-            road = int(lane / 100)
-            speedLimit = self.roads[road]['speed_limit']
-            length = self.roads[road]['length']
+                if veh in self.vehicle_routes:
+                    if lane != self.vehicle_routes[veh][-1]:
+                        if int(lane / 100) == int(self.vehicle_routes[veh][-1] / 100):
+                            info[veh]['lane_changed'] = True
+                            self.vehicle_routes[veh][-1] = lane
+                        else:
+                            self.vehicle_routes[veh].append(lane)
+                else:
+                    self.vehicle_routes[veh] = [lane]
+                t_ff = 0
+                for rl in self.vehicle_routes[veh]:
+                    rr = int(rl / 100)
+                    t_ff += self.roads[rr]['length'] / self.roads[rr]['speed_limit']
+                info[veh]['t_ff'] = [2 * t_ff]
             relSpeed = (speedSum / numVehs) / speedLimit if numVehs > 0 else 1.0
             # road is full and slow
             if numVehs * VEH_LENGTH > length * JAM_THRESH[now_step // SLICE] and relSpeed < SPEED_THRESH[now_step // SLICE]:
                 self.jammed_lanes[lane] += JAM_BONUS[now_step // SLICE]
         ttFFMean = ROUTE_LENGTH_WEIGHT[now_step // SLICE]
+
+        self.routedist = defaultdict(dict)
+        self.lanedist = defaultdict(dict)
+        laneMap = defaultdict(lambda: defaultdict(int))
+        edgeMap = defaultdict(lambda: defaultdict(int))
+        for route in self.vehicle_routes.values():
+            for idx, lane in enumerate(route):
+                subroute = tuple([int(r / 100) for r in route[idx:idx+3]])
+                laneMap[lane][subroute] += 1
+                edgeMap[int(lane / 100)][subroute] += 1
+        for edge, freq in edgeMap.items():
+            total = 0
+            for subroute, count in freq.items():
+                total += count
+            for subroute, count in freq.items():
+                if total > 10 and count / total > 0.9:
+                    self.routedist[edge][subroute] = count / total
+        #print(self.routedist)
 
         # get actions
         for agent in self.agent_list:

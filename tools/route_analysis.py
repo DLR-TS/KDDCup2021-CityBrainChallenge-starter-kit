@@ -51,13 +51,14 @@ def main(options):
     with open(options.output, "w") as outf:
         print("dist = {", file=outf)
         for edge, freq in edgeMap.items():
-            print('  %s : {' % edge, file=outf)
+#            print('  %s : {' % edge, file=outf)
             total = 0
             for subroute, count in freq.items():
                 total += count
             for subroute, count in freq.items():
-                print('    %s : %s,' % (subroute, count / total), file=outf)
-            print('  },', file=outf)
+                if count / total > 0.9:
+                    print('  %s:  { %s : %s },' % (edge, subroute, count / total), file=outf)
+#            print('  },', file=outf)
         print("}", file=outf)
 
 
