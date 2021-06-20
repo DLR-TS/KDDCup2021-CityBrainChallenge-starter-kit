@@ -4,10 +4,6 @@ from collections import defaultdict
 from gym_cfg import HEADWAY, SLOW_THRESH, JAM_THRESH, MIN_CHECK_LENGTH, JAM_BONUS, MAX_GREEN_SEC, PREFER_DUAL_THRESHOLD
 from gym_cfg import SPEED_THRESH, STOP_LINE_HEADWAY, BUFFER_THRESH, ROUTE_LENGTH_WEIGHT, SWITCH_THRESH
 from gym_cfg import FUTURE_JAM_LOOKAHEAD, SATURATED_THRESHOLD, SATURATION_INC
-try:
-    from routes import dist
-except:
-    dist = {}
 
 
 PHASE_LANES = {
@@ -217,9 +213,8 @@ class TestAgent():
 
 
         for veh, vehData in laneVehs[lane]:
-#            route = self.routedist.get(road, dist.get(road))
-#            route = self.routedist.get(road)
-            route = None
+            route = self.lanedist.get(lane)
+#            route = None
             speed = vehData['speed'][0]
             stoplineDist = length - vehData['distance'][0]
             if (speed < SLOW_THRESH * speedLimit) or (stoplineDist / speedLimit < STOP_LINE_HEADWAY):
@@ -287,15 +282,15 @@ class TestAgent():
             return 1.
         total = 0.
         for subroute, prob in route.items():
-            if len(subroute) == 1:
+            if len(subroute) == 2 and subroute[1] == -1:
                 # route does not go past the junction
                 continue
-            elif len(subroute) == 2:
+            elif len(subroute) == 3 and subroute[2] == -1:
                 # route ends after beyond the current junction
                 # all target lanes are permitted
                 if len(dstLanesJammed) == 3:
                     total += prob
-            else:
+            elif len(subroute) > 2:
                 lane = self.getTurnLane(subroute[1], subroute[2])
                 if lane is None:
                     # only signalized nodes define 'lanes'
@@ -305,6 +300,8 @@ class TestAgent():
                     #print("targetLaneJammed for veh %s with route %s, targetLane=%s inRoad=%s outRoad=%s" % (
                     #    veh, route, lane, route[1], route[2]))
                     total += prob
+            else:
+                total += prob
         return total
 
     def getFutureJamPenalty(self, route, now_step):
@@ -325,6 +322,34 @@ class TestAgent():
             total += result * prob
         return total
 
+    def calculateRouteDist(self):
+        laneMap = defaultdict(lambda: defaultdict(int))
+        edgeMap = defaultdict(lambda: defaultdict(int))
+        for route in self.vehicle_routes.values():
+            for idx, (lane, change) in enumerate(route):
+                subroute = tuple([int(r / 100) for r, _ in route[idx:idx+3]])
+                if change:
+                    laneMap[lane][subroute] += 1
+                edgeMap[int(lane / 100)][subroute] += 1
+        self.routedist = defaultdict(dict)
+        for edge, freq in edgeMap.items():
+            total = 0
+            for subroute, count in freq.items():
+                total += count
+            for subroute, count in freq.items():
+                if total > 10 and count / total > 0.9:
+                    self.routedist[edge][subroute] = count / total
+        self.lanedist = defaultdict(dict)
+        for lane, freq in laneMap.items():
+            total = 0
+            for subroute, count in freq.items():
+                total += count
+            for subroute, count in freq.items():
+                if total > 10 and count / total > 0.9:
+                    self.lanedist[lane][subroute] = count / total
+#        print(self.routedist)
+#        print(self.lanedist)
+
     def act(self, obs):
         # observations is returned 'observation' of env.step()
         # info is returned 'info' of env.step()
@@ -335,6 +360,7 @@ class TestAgent():
         now_step = info['step'] * 10
         actions = {}
 
+        unSeen = set(self.vehicle_routes)
         laneVehs = defaultdict(list) # lane -> (veh, vehData)
         for lane, vehicles in list(observations.values())[0].items():
             speedSum = 0
@@ -346,16 +372,20 @@ class TestAgent():
                 laneVehs[lane].append((veh, info[veh]))
                 speedSum += info[veh]['speed'][0]
                 if veh in self.vehicle_routes:
-                    if lane != self.vehicle_routes[veh][-1]:
-                        if int(lane / 100) == int(self.vehicle_routes[veh][-1] / 100):
-                            info[veh]['lane_changed'] = True
-                            self.vehicle_routes[veh][-1] = lane
+                    if lane != self.vehicle_routes[veh][-1][0]:
+                        prevRoad = int(self.vehicle_routes[veh][-1][0] / 100)
+                        if road == prevRoad:
+                            self.vehicle_routes[veh][-1] = (lane, True)
                         else:
-                            self.vehicle_routes[veh].append(lane)
+                            turnLane = self.getTurnLane(prevRoad, road)
+                            if turnLane is not None:
+                                self.vehicle_routes[veh][-1] = (turnLane, True)
+                            self.vehicle_routes[veh].append((lane, False))
+                    unSeen.discard(veh)
                 else:
-                    self.vehicle_routes[veh] = [lane]
+                    self.vehicle_routes[veh] = [(lane, False)]
                 t_ff = 0
-                for rl in self.vehicle_routes[veh]:
+                for rl, _ in self.vehicle_routes[veh]:
                     rr = int(rl / 100)
                     t_ff += self.roads[rr]['length'] / self.roads[rr]['speed_limit']
                 info[veh]['t_ff'] = [2 * t_ff]
@@ -364,24 +394,10 @@ class TestAgent():
             if numVehs * VEH_LENGTH > length * JAM_THRESH and relSpeed < SPEED_THRESH:
                 self.jammed_lanes[lane] += JAM_BONUS
         ttFFMean = ROUTE_LENGTH_WEIGHT
-
-        self.routedist = defaultdict(dict)
-        self.lanedist = defaultdict(dict)
-        laneMap = defaultdict(lambda: defaultdict(int))
-        edgeMap = defaultdict(lambda: defaultdict(int))
-        for route in self.vehicle_routes.values():
-            for idx, lane in enumerate(route):
-                subroute = tuple([int(r / 100) for r in route[idx:idx+3]])
-                laneMap[lane][subroute] += 1
-                edgeMap[int(lane / 100)][subroute] += 1
-        for edge, freq in edgeMap.items():
-            total = 0
-            for subroute, count in freq.items():
-                total += count
-            for subroute, count in freq.items():
-                if total > 10 and count / total > 0.9:
-                    self.routedist[edge][subroute] = count / total
-        #print(self.routedist)
+        for veh in unSeen:
+            if self.vehicle_routes[veh][-1][0] != -100:
+                self.vehicle_routes[veh].append((-100, False))
+        self.calculateRouteDist()
 
         # get actions
         for agent in self.agent_list:

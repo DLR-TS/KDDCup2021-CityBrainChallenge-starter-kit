@@ -57,14 +57,20 @@ def get_score(par_agent, flow="0"):
     return scores["data"]["delay_index"]
 
 def run_evaluation(par, names, args):
-    p, par_agent, _ = start_evaluation(par, names, args)
-    p.wait()
-    return get_score(par_agent)
+    procs = []
+    scores = 0
+    for f in range(args.flows):
+        flow = str(f)
+        procs.append(start_evaluation(par, names, args, flow))
+    for proc, agent_dir, par, flow in procs:
+        proc.wait()
+        scores += get_score(agent_dir, flow)
+    return scores
 
 def parallel_single_parameter(names, init, ranges, args):
     values = list(init)
     for idx in range(len(init)):
-        scores = defaultdict(dict)
+        scores = defaultdict(float)
         step = (ranges[idx][1] - ranges[idx][0]) / args.steps
         procs = []
         for i in range(args.steps):
@@ -75,20 +81,15 @@ def parallel_single_parameter(names, init, ranges, args):
                 if args.threads and len(procs) == args.threads:
                     for proc, agent_dir, par, flow in procs:
                         proc.wait()
-                        scores[flow][par] = get_score(agent_dir, flow)
+                        scores[par] += get_score(agent_dir, flow)
                     procs = []
         for proc, agent_dir, par, flow in procs:
             proc.wait()
-            scores[flow][par] = get_score(agent_dir, flow)
+            scores[par] += get_score(agent_dir, flow)
         procs = []
         print("scores", scores)
-        agent_rank = defaultdict(int)
-        for f in range(args.flows):
-            for rank, (par, _) in enumerate(sorted(scores[str(f)].items(), key=lambda i: i[1])):
-                agent_rank[par] += rank
-        print("ranks", agent_rank)
-        min_par = min(agent_rank.items(), key=lambda i: i[1])[0]
-        print("min", min_par, [scores[str(f)][min_par] for f in range(args.flows)])
+        min_par, min_score = min(scores.items(), key=lambda i: i[1])
+        print("min", min_par, min_score)
         values[idx] = min_par[idx]
     return values
 
