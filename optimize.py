@@ -10,9 +10,6 @@ import glob
 from collections import defaultdict
 
 
-SLICE = 600
-
-
 def start_evaluation(param, names, args, flow="0"):
     if args.agent.endswith("/"):
         agent = args.agent[:-1]
@@ -36,10 +33,8 @@ def start_evaluation(param, names, args, flow="0"):
             ls = line.split()
             for n, val in zip(names, param):
                 if ls and ls[0] == n:
-                    assign, comment = line.split("#")
-                    slices = json.loads(assign.split("=")[1])
-                    slices[(args.max_time - 1) // SLICE] = val
-                    line = n + " = " + json.dumps(slices) + " # " + comment
+                    ls[2] = "%s" % val
+                    line = " ".join(ls) + "\n"
                     break
             cfg.write(line)
     with open(args.simulator_cfg) as cfg_in, open(os.path.join(par_agent, "simulator.cfg"), "w") as cfg:
@@ -117,9 +112,7 @@ if __name__ == "__main__":
         if "optimized" in line:
             ls = line.split()
             try:
-                assign = line.split("#")[0]
-                slices = json.loads(assign.split("=")[1])
-                initial = slices[(args.max_time - 1) // SLICE]
+                initial = float(ls[2])
                 r = (float(ls[-2]), float(ls[-1]))
             except:
                 pass
