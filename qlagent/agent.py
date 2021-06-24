@@ -3,7 +3,8 @@ from collections import defaultdict
 
 from gym_cfg import HEADWAY, SLOW_THRESH, JAM_THRESH, MIN_CHECK_LENGTH, JAM_BONUS, MAX_GREEN_SEC, PREFER_DUAL_THRESHOLD
 from gym_cfg import SPEED_THRESH, STOP_LINE_HEADWAY, BUFFER_THRESH, ROUTE_LENGTH_WEIGHT, SWITCH_THRESH
-from gym_cfg import FUTURE_JAM_LOOKAHEAD, SATURATED_THRESHOLD, SATURATION_INC
+from gym_cfg import FUTURE_JAM_LOOKAHEAD, SATURATED_THRESHOLD, SATURATION_INC, MIN_ROUTE_COUNT, MIN_ROUTE_PROB
+import dijkstra
 
 
 PHASE_LANES = {
@@ -101,13 +102,18 @@ class TestAgent():
     def load_roadnet(self,intersections, roads, agents):
         self.intersections = intersections
         self.roads = roads
+        self.roadgraph = {}
         for road, road_data in roads.items():
             if intersections[road_data['start_inter']]['have_signal'] and intersections[road_data['end_inter']]['have_signal']:
                 self.tls_dist[road] = (road_data['start_inter'], road_data['end_inter'], road_data['length'] / road_data['speed_limit'])
+            self.roadgraph[road] = dijkstra.Edge(road, road_data['length'])
+        for road, road_data in roads.items():
+            for nextRoad in self.intersections[road_data['end_inter']]['start_roads']:
+                self.roadgraph[road].addOut(self.roadgraph[nextRoad])
         self.agents = agents
     ################################
 
-    def getTurnLane(self, inRoad, outRoad):
+    def getTurnLane(self, inRoad, outRoad, warn=True):
         inOut = (inRoad, outRoad)
         if not inOut in TURN_LANE_CACHE:
             junction = self.roads[inRoad]['end_inter']
@@ -126,7 +132,8 @@ class TestAgent():
                         TURN_LANE_CACHE[inOut] = nextLanes[index]
                         break
                 if not found:
-                    print("Found no lane that connects road %s with %s at junction %s (broken route?)" % (inRoad, outRoad, junction))
+                    if warn:
+                        print("Found no lane that connects road %s with %s at junction %s (broken route?)" % (inRoad, outRoad, junction))
                     TURN_LANE_CACHE[inOut] = None
         return TURN_LANE_CACHE[inOut]
 
@@ -213,17 +220,20 @@ class TestAgent():
 
 
         for veh, vehData in laneVehs[lane]:
-            route = self.lanedist.get(lane)
+            route = self.routedist.get(road)
+#            route = self.lanedist.get(lane)
 #            route = None
             speed = vehData['speed'][0]
+            meanSpeed = (speed + speedLimit) / 2
             stoplineDist = length - vehData['distance'][0]
-            if (speed < SLOW_THRESH * speedLimit) or (stoplineDist / speedLimit < STOP_LINE_HEADWAY):
+            if (speed < SLOW_THRESH * speedLimit) or (stoplineDist / meanSpeed < STOP_LINE_HEADWAY):
                 tlJamProb = self.targetLaneJammed(veh, route, dstLanesJammed)
                 # delayIndex is impacted more strongly by vehicles with short routes
                 # median t_ff is ~720
-                #baseWeight = (route_length_weight / vehData.get('t_ff', [route_length_weight])[0])
-                baseWeight = 1.
-                #fjPenalty = self.getFutureJamPenalty(route, now_step)
+                baseWeight = (now_step - vehData['start_time'][0]) / vehData['t_ff'][0]
+#                baseWeight = (route_length_weight / vehData.get('t_ff', [route_length_weight])[0])
+#                baseWeight = 1.
+#                fjPenalty = self.getFutureJamPenalty(route, now_step)
                 fjPenalty = 1.
                 laneQ +=  (1. - tlJamProb) * baseWeight / fjPenalty
                 vehs.append(veh)
@@ -251,7 +261,7 @@ class TestAgent():
                     # ignore turnaround
                     if predRoad >= 0 and self.roads[predRoad]['start_inter'] != agent:
                         # add straight connected lane
-                        predLanes.append(predRoad * 100 + 1)
+                        predLanes += [predRoad * 100 + 1]
 
             for predLane in predLanes:
                 predRoad = int(predLane / 100)
@@ -259,8 +269,9 @@ class TestAgent():
                 for veh, vehData in laneVehs[predLane]:
                     if 'route' not in vehData or predRoad != vehData['route'][-1]:
                         speed = vehData['speed'][0]
+                        meanSpeed = (speed + speedLimit) / 2
                         stoplineDist = length + predLength - vehData['distance'][0]
-                        if (speed < SLOW_THRESH * speedLimit) or (stoplineDist / speedLimit < STOP_LINE_HEADWAY):
+                        if (speed < SLOW_THRESH * speedLimit) or (stoplineDist / meanSpeed < STOP_LINE_HEADWAY):
                             # laneQ += route_length_weight / vehData['t_ff'][0]
                             laneQ += 1
                             vehs.append(veh)
@@ -312,6 +323,8 @@ class TestAgent():
             result = 1.0
             saturated = SATURATED_THRESHOLD
             for i in range(1, min(len(subroute), int(FUTURE_JAM_LOOKAHEAD + 0.5))):
+                if subroute[i] == -1:
+                    break
                 junction = self.roads[subroute[i]]['end_inter']
                 totals = self.total_queues.get(junction, [])
                 if len(totals) > 1:
@@ -327,7 +340,7 @@ class TestAgent():
         edgeMap = defaultdict(lambda: defaultdict(int))
         for route in self.vehicle_routes.values():
             for idx, (lane, change) in enumerate(route):
-                subroute = tuple([int(r / 100) for r, _ in route[idx:idx+3]])
+                subroute = tuple([int(r / 100) for r, _ in route[idx:idx+7]])
                 if change:
                     laneMap[lane][subroute] += 1
                 edgeMap[int(lane / 100)][subroute] += 1
@@ -337,7 +350,7 @@ class TestAgent():
             for subroute, count in freq.items():
                 total += count
             for subroute, count in freq.items():
-                if total > 10 and count / total > 0.9:
+                if total > MIN_ROUTE_COUNT and count / total > MIN_ROUTE_PROB:
                     self.routedist[edge][subroute] = count / total
         self.lanedist = defaultdict(dict)
         for lane, freq in laneMap.items():
@@ -345,7 +358,7 @@ class TestAgent():
             for subroute, count in freq.items():
                 total += count
             for subroute, count in freq.items():
-                if total > 10 and count / total > 0.9:
+                if total > MIN_ROUTE_COUNT and count / total > MIN_ROUTE_PROB:
                     self.lanedist[lane][subroute] = count / total
 #        print(self.routedist)
 #        print(self.lanedist)
@@ -373,12 +386,47 @@ class TestAgent():
                 speedSum += info[veh]['speed'][0]
                 if veh in self.vehicle_routes:
                     if lane != self.vehicle_routes[veh][-1][0]:
-                        prevRoad = int(self.vehicle_routes[veh][-1][0] / 100)
+                        prevLane = self.vehicle_routes[veh][-1][0]
+                        prevRoad = int(prevLane / 100)
                         if road == prevRoad:
                             self.vehicle_routes[veh][-1] = (lane, True)
                         else:
-                            turnLane = self.getTurnLane(prevRoad, road)
-                            if turnLane is not None:
+                            turnLane = self.getTurnLane(prevRoad, road, False)
+                            if turnLane is None:
+                                nextRoads = self.intersections[self.roads[prevRoad]['end_inter']]['start_roads']
+                                if road in nextRoads:
+                                    # non signalized intersection
+                                    self.vehicle_routes[veh][-1] = (prevLane, True)
+                                else:
+                                    for intermed in nextRoads:
+                                        turnLane2 = self.getTurnLane(intermed, road, False)
+                                        if turnLane2 is None:
+                                            nextRoads2 = self.intersections[self.roads[intermed]['end_inter']]['start_roads']
+                                            if road in nextRoads2:
+                                                turnLane = self.getTurnLane(prevRoad, intermed)
+                                                if turnLane is None:
+                                                    # another non signalized intersection
+                                                    self.vehicle_routes[veh][-1] = (prevLane, True)
+                                                else:
+                                                    self.vehicle_routes[veh][-1] = (turnLane, True)
+                                                self.vehicle_routes[veh].append((intermed * 100 + lane % 100, True))
+                                                break
+                                        else:
+                                            turnLane = self.getTurnLane(prevRoad, intermed)
+                                            if turnLane is None:
+                                                # non signalized intersection
+                                                self.vehicle_routes[veh][-1] = (prevLane, True)
+                                            else:
+                                                self.vehicle_routes[veh][-1] = (turnLane, True)
+                                            self.vehicle_routes[veh].append((turnLane2, True))
+                                            break
+                                    else:
+                                        path = self.roadgraph[prevRoad].getShortestPath(self.roadgraph[road])
+                                        for e in path[0][1:-1]:
+                                            # TODO this is not lane specific
+                                            self.vehicle_routes[veh].append((e.id * 100, False))
+#                                        print("no intermediate edge connecting %s and %s %s" % (prevRoad, road, [e.id for e in path[0]]))
+                            else:
                                 self.vehicle_routes[veh][-1] = (turnLane, True)
                             self.vehicle_routes[veh].append((lane, False))
                     unSeen.discard(veh)
@@ -388,7 +436,7 @@ class TestAgent():
                 for rl, _ in self.vehicle_routes[veh]:
                     rr = int(rl / 100)
                     t_ff += self.roads[rr]['length'] / self.roads[rr]['speed_limit']
-                info[veh]['t_ff'] = [2 * t_ff]
+                info[veh]['t_ff'] = [t_ff]
             relSpeed = (speedSum / numVehs) / speedLimit if numVehs > 0 else 1.0
             # road is full and slow
             if numVehs * VEH_LENGTH > length * JAM_THRESH and relSpeed < SPEED_THRESH:
