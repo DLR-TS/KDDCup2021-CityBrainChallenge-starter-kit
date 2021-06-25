@@ -3,7 +3,7 @@ from collections import defaultdict
 
 from gym_cfg import HEADWAY, SLOW_THRESH, JAM_THRESH, MIN_CHECK_LENGTH, JAM_BONUS, MAX_GREEN_SEC, PREFER_DUAL_THRESHOLD
 from gym_cfg import SPEED_THRESH, STOP_LINE_HEADWAY, BUFFER_THRESH, ROUTE_LENGTH_WEIGHT, SWITCH_THRESH
-from gym_cfg import FUTURE_JAM_LOOKAHEAD, SATURATED_THRESHOLD, SATURATION_INC, MIN_ROUTE_COUNT, MIN_ROUTE_PROB
+from gym_cfg import FUTURE_JAM_LOOKAHEAD, SATURATED_THRESHOLD, SATURATION_INC, MIN_ROUTE_COUNT, MIN_ROUTE_PROB, DELAY_WEIGHT
 import dijkstra
 
 
@@ -230,7 +230,8 @@ class TestAgent():
                 tlJamProb = self.targetLaneJammed(veh, route, dstLanesJammed)
                 # delayIndex is impacted more strongly by vehicles with short routes
                 # median t_ff is ~720
-                baseWeight = (now_step - vehData['start_time'][0]) / vehData['t_ff'][0]
+                baseWeight = (now_step - vehData['start_time'][0] + DELAY_WEIGHT) / (vehData['t_ff'][0] + DELAY_WEIGHT)
+#                baseWeight *= max(1, 1.3 - stoplineDist / MIN_CHECK_LENGTH)
 #                baseWeight = (route_length_weight / vehData.get('t_ff', [route_length_weight])[0])
 #                baseWeight = 1.
 #                fjPenalty = self.getFutureJamPenalty(route, now_step)
@@ -273,7 +274,10 @@ class TestAgent():
                         stoplineDist = length + predLength - vehData['distance'][0]
                         if (speed < SLOW_THRESH * speedLimit) or (stoplineDist / meanSpeed < STOP_LINE_HEADWAY):
                             # laneQ += route_length_weight / vehData['t_ff'][0]
-                            laneQ += 1
+#                            baseWeight = ((now_step - vehData['start_time'][0]) / vehData['t_ff'][0] - 1) * DELAY_WEIGHT + 1
+#                            baseWeight = (route_length_weight / vehData.get('t_ff', [route_length_weight])[0])
+                            baseWeight = 1.
+                            laneQ += baseWeight
                             vehs.append(veh)
                             #print("%s adding pred phase=%s index=%s lane=%s len=%s predRoad=%s predVeh=%s" % (
                             #    agent, phase, index, lane, length, predRoad, veh))
@@ -340,7 +344,7 @@ class TestAgent():
         edgeMap = defaultdict(lambda: defaultdict(int))
         for route in self.vehicle_routes.values():
             for idx, (lane, change) in enumerate(route):
-                subroute = tuple([int(r / 100) for r, _ in route[idx:idx+7]])
+                subroute = tuple([int(r / 100) for r, _ in route[idx:idx+int(FUTURE_JAM_LOOKAHEAD + 0.5)]])
                 if change:
                     laneMap[lane][subroute] += 1
                 edgeMap[int(lane / 100)][subroute] += 1
