@@ -67,6 +67,14 @@ def run_evaluation(par, names, args):
     for proc, agent_dir, par, flow in procs:
         proc.wait()
         scores += get_score(agent_dir, flow)
+    with open("optimize.log", "a") as log:
+        hasher = hashlib.md5()
+        hasher.update(open(os.path.join(args.agent, 'agent.py'), 'rb').read())
+        print(hasher.hexdigest(), datetime.datetime.now(), file=log)
+        print(args, names, file=log)
+        print("scores", scores)
+        print("scores", scores, file=log)
+        print(file=log)
     return scores
 
 def parallel_single_parameter(names, init, ranges, args):
