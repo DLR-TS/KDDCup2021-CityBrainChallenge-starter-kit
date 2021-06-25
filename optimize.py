@@ -7,6 +7,8 @@ import atexit
 import json
 import uuid
 import glob
+import datetime
+import hashlib
 from collections import defaultdict
 
 
@@ -87,9 +89,17 @@ def parallel_single_parameter(names, init, ranges, args):
             proc.wait()
             scores[par] += get_score(agent_dir, flow)
         procs = []
-        print("scores", scores)
-        min_par, min_score = min(scores.items(), key=lambda i: i[1])
-        print("min", min_par, min_score)
+        with open("optimize.log", "a") as log:
+            hasher = hashlib.md5()
+            hasher.update(open(os.path.join(args.agent, 'agent.py'), 'rb').read())
+            print(hasher.hexdigest(), datetime.datetime.now(), file=log)
+            print(args, list(zip(names, ranges)), file=log)
+            print("scores", scores)
+            print("scores", scores, file=log)
+            min_par, min_score = min(scores.items(), key=lambda i: i[1])
+            print("min", min_par, min_score)
+            print("min", min_par, min_score, file=log)
+            print(file=log)
         values[idx] = min_par[idx]
     return values
 
