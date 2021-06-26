@@ -58,7 +58,10 @@ def get_score(par_agent, flow="0"):
     scores = json.load(open(os.path.join(par_agent, flow, "scores.json")))
     return scores["data"]["delay_index"]
 
-def run_evaluation(par, names, args):
+def run_evaluation(par, names, ranges, args):
+    if args.method == "cobyla":
+        par = [p * (upper - lower) + lower for p, (lower, upper) in zip(par, ranges)]
+    print(args, list(zip(names, par, ranges)))
     procs = []
     scores = 0
     for f in range(args.flows):
@@ -71,7 +74,7 @@ def run_evaluation(par, names, args):
         hasher = hashlib.md5()
         hasher.update(open(os.path.join(args.agent, 'agent.py'), 'rb').read())
         print(hasher.hexdigest(), datetime.datetime.now(), file=log)
-        print(args, names, file=log)
+        print(args, list(zip(names, ranges)), file=log)
         print("scores", scores)
         print("scores", scores, file=log)
         print(file=log)
@@ -144,18 +147,19 @@ if __name__ == "__main__":
     if args.method == "plain":
         opt = parallel_single_parameter(names, init, ranges, args)
     elif args.method == "cobyla":
-        def constr(x, names, args):
-            print(x)
-            for v, (lower, upper) in zip(x, ranges):
-                if v < lower or v > upper:
+        # this needs pip install scipy
+        from scipy.optimize import fmin_cobyla
+        def constr(x, names, ranges, args):
+            for v in x:
+                if v < 0 or v > 1:
                     return -1
             return 1
-        from scipy.optimize import fmin_cobyla
-        fmin_cobyla(run_evaluation, init, cons=[constr], args=(names, args), rhoend=1e-7)
+        init = [(p - lower) / (upper - lower) for p, (lower, upper) in zip(init, ranges)]
+        fmin_cobyla(run_evaluation, init, cons=[constr], args=(names, ranges, args), rhoend=1e-7)
     elif args.method == "optim":
         # this needs pip install optimparallel
         from optimparallel import minimize_parallel
-        opt = minimize_parallel(run_evaluation, init, (names, args), bounds=ranges, options={"eps":0.01})
+        opt = minimize_parallel(run_evaluation, init, (names, ranges, args), bounds=ranges, options={"eps":0.01})
     else:
         # this needs pip install scikit-optimize
         from skopt import Optimizer
@@ -165,6 +169,6 @@ if __name__ == "__main__":
         optimizer = Optimizer(dimensions=ranges, random_state=42)
         for i in range(args.steps):
             x = optimizer.ask(n_points=args.threads)  # x is a list of n_points points
-            y = Parallel(n_jobs=args.threads)(delayed(lambda x: run_evaluation(x, names, args))(v) for v in x)  # evaluate points in parallel
+            y = Parallel(n_jobs=args.threads)(delayed(lambda x: run_evaluation(x, names, ranges, args))(v) for v in x)  # evaluate points in parallel
             optimizer.tell(x, y)
         opt = min(optimizer.yi)
