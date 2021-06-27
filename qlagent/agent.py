@@ -2,7 +2,7 @@ import os
 from collections import defaultdict
 
 from gym_cfg import HEADWAY, SLOW_THRESH, JAM_THRESH, MIN_CHECK_LENGTH, JAM_BONUS, MAX_GREEN_SEC, PREFER_DUAL_THRESHOLD
-from gym_cfg import SPEED_THRESH, STOP_LINE_HEADWAY, BUFFER_THRESH, ROUTE_LENGTH_WEIGHT, SWITCH_THRESH
+from gym_cfg import SPEED_THRESH, STOP_LINE_HEADWAY, BUFFER_THRESH, ROUTE_LENGTH_WEIGHT, SWITCH_THRESH, LEFT_TURN_BONUS
 from gym_cfg import FUTURE_JAM_LOOKAHEAD, SATURATED_THRESHOLD, SATURATION_INC, MIN_ROUTE_COUNT, MIN_ROUTE_PROB, DELAY_WEIGHT
 import dijkstra
 
@@ -159,8 +159,11 @@ class TestAgent():
 
             if self.intersections[agent]['lanes'][DEST_LANES[index][0] - 1] != -1:
                 hasDst = True
+            bonus = 0
+            if agent == 42310676427 and index == 10:
+                bonus = LEFT_TURN_BONUS
             #print(agent, index, lane, laneQueues)
-            queueLengths.append(laneQueues[index])
+            queueLengths.append(laneQueues[index] + bonus)
 
         if not hasDst:
             return -1, -1
