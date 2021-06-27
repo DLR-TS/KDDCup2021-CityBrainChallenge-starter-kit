@@ -184,10 +184,10 @@ class TestAgent():
         lane = self.intersections[agent]['lanes'][index - 1]
         if lane == -1:
             # lane does not exist
-            return -1;
+            return -1
         if self.intersections[agent]['lanes'][DEST_LANES[index][0] - 1] == -1:
             # destination edge does not exist
-            return -1;
+            return -1
 
         laneQ = 0
         vehs = []
@@ -367,6 +367,56 @@ class TestAgent():
 #        print(self.routedist)
 #        print(self.lanedist)
 
+    def extendRoute(self, veh, lane, road):
+        if veh in self.vehicle_routes:
+            if lane != self.vehicle_routes[veh][-1][0]:
+                prevLane = self.vehicle_routes[veh][-1][0]
+                prevRoad = int(prevLane / 100)
+                if road == prevRoad:
+                    self.vehicle_routes[veh][-1] = (lane, True)
+                else:
+                    turnLane = self.getTurnLane(prevRoad, road, False)
+                    if turnLane is None:
+                        nextRoads = self.intersections[self.roads[prevRoad]['end_inter']]['start_roads']
+                        if road in nextRoads:
+                            # non signalized intersection
+                            self.vehicle_routes[veh][-1] = (prevLane, True)
+                        else:
+                            for intermed in nextRoads:
+                                turnLane2 = self.getTurnLane(intermed, road, False)
+                                if turnLane2 is None:
+                                    nextRoads2 = self.intersections[self.roads[intermed]['end_inter']]['start_roads']
+                                    if road in nextRoads2:
+                                        turnLane = self.getTurnLane(prevRoad, intermed)
+                                        if turnLane is None:
+                                            # another non signalized intersection
+                                            self.vehicle_routes[veh][-1] = (prevLane, True)
+                                        else:
+                                            self.vehicle_routes[veh][-1] = (turnLane, True)
+                                        self.vehicle_routes[veh].append((intermed * 100 + lane % 100, True))
+                                        break
+                                else:
+                                    turnLane = self.getTurnLane(prevRoad, intermed)
+                                    if turnLane is None:
+                                        # non signalized intersection
+                                        self.vehicle_routes[veh][-1] = (prevLane, True)
+                                    else:
+                                        self.vehicle_routes[veh][-1] = (turnLane, True)
+                                    self.vehicle_routes[veh].append((turnLane2, True))
+                                    break
+                            else:
+                                path = self.roadgraph[prevRoad].getShortestPath(self.roadgraph[road])
+                                for e in path[0][1:-1]:
+                                    # TODO this is not lane specific
+                                    self.vehicle_routes[veh].append((e.id * 100, False))
+#                                        print("no intermediate edge connecting %s and %s %s" % (prevRoad, road, [e.id for e in path[0]]))
+                    else:
+                        self.vehicle_routes[veh][-1] = (turnLane, True)
+                    self.vehicle_routes[veh].append((lane, False))
+            return True
+        self.vehicle_routes[veh] = [(lane, False)]
+        return False
+
     def act(self, obs):
         # observations is returned 'observation' of env.step()
         # info is returned 'info' of env.step()
@@ -388,54 +438,8 @@ class TestAgent():
             for veh in vehicles:
                 laneVehs[lane].append((veh, info[veh]))
                 speedSum += info[veh]['speed'][0]
-                if veh in self.vehicle_routes:
-                    if lane != self.vehicle_routes[veh][-1][0]:
-                        prevLane = self.vehicle_routes[veh][-1][0]
-                        prevRoad = int(prevLane / 100)
-                        if road == prevRoad:
-                            self.vehicle_routes[veh][-1] = (lane, True)
-                        else:
-                            turnLane = self.getTurnLane(prevRoad, road, False)
-                            if turnLane is None:
-                                nextRoads = self.intersections[self.roads[prevRoad]['end_inter']]['start_roads']
-                                if road in nextRoads:
-                                    # non signalized intersection
-                                    self.vehicle_routes[veh][-1] = (prevLane, True)
-                                else:
-                                    for intermed in nextRoads:
-                                        turnLane2 = self.getTurnLane(intermed, road, False)
-                                        if turnLane2 is None:
-                                            nextRoads2 = self.intersections[self.roads[intermed]['end_inter']]['start_roads']
-                                            if road in nextRoads2:
-                                                turnLane = self.getTurnLane(prevRoad, intermed)
-                                                if turnLane is None:
-                                                    # another non signalized intersection
-                                                    self.vehicle_routes[veh][-1] = (prevLane, True)
-                                                else:
-                                                    self.vehicle_routes[veh][-1] = (turnLane, True)
-                                                self.vehicle_routes[veh].append((intermed * 100 + lane % 100, True))
-                                                break
-                                        else:
-                                            turnLane = self.getTurnLane(prevRoad, intermed)
-                                            if turnLane is None:
-                                                # non signalized intersection
-                                                self.vehicle_routes[veh][-1] = (prevLane, True)
-                                            else:
-                                                self.vehicle_routes[veh][-1] = (turnLane, True)
-                                            self.vehicle_routes[veh].append((turnLane2, True))
-                                            break
-                                    else:
-                                        path = self.roadgraph[prevRoad].getShortestPath(self.roadgraph[road])
-                                        for e in path[0][1:-1]:
-                                            # TODO this is not lane specific
-                                            self.vehicle_routes[veh].append((e.id * 100, False))
-#                                        print("no intermediate edge connecting %s and %s %s" % (prevRoad, road, [e.id for e in path[0]]))
-                            else:
-                                self.vehicle_routes[veh][-1] = (turnLane, True)
-                            self.vehicle_routes[veh].append((lane, False))
+                if self.extendRoute(veh, lane, road):
                     unSeen.discard(veh)
-                else:
-                    self.vehicle_routes[veh] = [(lane, False)]
                 t_ff = 0
                 for rl, _ in self.vehicle_routes[veh]:
                     rr = int(rl / 100)
