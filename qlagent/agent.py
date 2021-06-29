@@ -239,8 +239,8 @@ class TestAgent():
                 # delayIndex is impacted more strongly by vehicles with short routes
                 # median t_ff is ~720
                 # TODO try to weight by t_ff up to now
-#                baseWeight = (vehData['t_ff'][0] + DELAY_WEIGHT) / ROUTE_LENGTH_WEIGHT
                 baseWeight = (now_step - vehData['start_time'][0] + DELAY_WEIGHT) / (vehData['t_ff'][0] + DELAY_WEIGHT)
+#                baseWeight *= ROUTE_LENGTH_WEIGHT / (vehData['t_ff'][0] + ROUTE_LENGTH_WEIGHT)
 #                baseWeight *= max(1, 1.3 - stoplineDist / MIN_CHECK_LENGTH)
 #                baseWeight = (route_length_weight / vehData.get('t_ff', [route_length_weight])[0])
 #                baseWeight = 1.
