@@ -4,6 +4,7 @@ from collections import defaultdict
 from gym_cfg import HEADWAY, SLOW_THRESH, JAM_THRESH, MIN_CHECK_LENGTH, JAM_BONUS, MAX_GREEN_SEC, PREFER_DUAL_THRESHOLD
 from gym_cfg import SPEED_THRESH, STOP_LINE_HEADWAY, BUFFER_THRESH, ROUTE_LENGTH_WEIGHT, SWITCH_THRESH, LEFT_TURN_BONUS
 from gym_cfg import FUTURE_JAM_LOOKAHEAD, SATURATED_THRESHOLD, SATURATION_INC, MIN_ROUTE_COUNT, MIN_ROUTE_PROB, DELAY_WEIGHT
+from gym_cfg import BUFFER_SPEED_THRESH, BUFFER_JAM_THRESH, DUAL_SWITCH_THRESH
 import dijkstra
 
 
@@ -162,6 +163,10 @@ class TestAgent():
             bonus = 0
             if agent == 42310676427 and index == 10:
                 bonus = LEFT_TURN_BONUS
+#            if agent == 42315628454 and index == 10:
+#                bonus = LEFT_TURN_BONUS
+#            if agent == 12657347936 and index == 8:
+#                bonus = LEFT_TURN_BONUS
             #print(agent, index, lane, laneQueues)
             queueLengths.append(laneQueues[index] + bonus)
 
@@ -215,7 +220,7 @@ class TestAgent():
                 if pos < 5 and speed == 0:
                     bufferVehs += 1
             dstRelSpeed = (dstSpeed / dstVehs) / dstSpeedLimit if dstVehs > 0 else 1.0
-            if (dstVehs * VEH_LENGTH >= dstLength * JAM_THRESH and dstRelSpeed < SPEED_THRESH) or bufferVehs > BUFFER_THRESH:
+            if (dstVehs * VEH_LENGTH >= dstLength * BUFFER_JAM_THRESH and dstRelSpeed < BUFFER_SPEED_THRESH) or bufferVehs > BUFFER_THRESH:
                 # lane is full and slow
                 dstLanesJammed[dstLane] = True
                 #print("%s agent %s ignoring target lane %s dstVehs=%s, dstSpeed=%s, dstRelSpeed=%s" % (
@@ -233,6 +238,8 @@ class TestAgent():
                 tlJamProb = self.targetLaneJammed(veh, route, dstLanesJammed)
                 # delayIndex is impacted more strongly by vehicles with short routes
                 # median t_ff is ~720
+                # TODO try to weight by t_ff up to now
+#                baseWeight = (vehData['t_ff'][0] + DELAY_WEIGHT) / ROUTE_LENGTH_WEIGHT
                 baseWeight = (now_step - vehData['start_time'][0] + DELAY_WEIGHT) / (vehData['t_ff'][0] + DELAY_WEIGHT)
 #                baseWeight *= max(1, 1.3 - stoplineDist / MIN_CHECK_LENGTH)
 #                baseWeight = (route_length_weight / vehData.get('t_ff', [route_length_weight])[0])
@@ -279,7 +286,8 @@ class TestAgent():
                             # laneQ += route_length_weight / vehData['t_ff'][0]
 #                            baseWeight = ((now_step - vehData['start_time'][0]) / vehData['t_ff'][0] - 1) * DELAY_WEIGHT + 1
 #                            baseWeight = (route_length_weight / vehData.get('t_ff', [route_length_weight])[0])
-                            baseWeight = 1.
+                            baseWeight = (now_step - vehData['start_time'][0] + DELAY_WEIGHT) / (vehData['t_ff'][0] + DELAY_WEIGHT)
+#                            baseWeight = 1.
                             laneQ += baseWeight
                             vehs.append(veh)
                             #print("%s adding pred phase=%s index=%s lane=%s len=%s predRoad=%s predVeh=%s" % (
@@ -484,6 +492,7 @@ class TestAgent():
             queue_lengths.sort(reverse=True)
             (bestDual, bestTotal), newPhase = queue_lengths[0]
             if dual > 0 or (bestDual == 0 and (total * HEADWAY > 10 or bestTotal - total <= SWITCH_THRESH)):
+#            if bestDual - dual <= DUAL_SWITCH_THRESH or (total * HEADWAY > 10 or bestTotal - total <= SWITCH_THRESH):
                 # dualFlow > 0 already means it's above PREFER_DUAL_THRESHOLD
                 newPhase = oldPhase
                 if agent == DEBUGID:
