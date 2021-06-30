@@ -1,5 +1,6 @@
 import os
 from collections import defaultdict
+from pprint import pprint
 
 from gym_cfg import HEADWAY, SLOW_THRESH, JAM_THRESH, MIN_CHECK_LENGTH, JAM_BONUS, MAX_GREEN_SEC, PREFER_DUAL_THRESHOLD
 from gym_cfg import SPEED_THRESH, STOP_LINE_HEADWAY, BUFFER_THRESH, ROUTE_LENGTH_WEIGHT, SWITCH_THRESH, LEFT_TURN_BONUS
@@ -350,7 +351,7 @@ class TestAgent():
             total += result * prob
         return total
 
-    def calculateRouteDist(self):
+    def calculateRouteDist(self, now_step):
         laneMap = defaultdict(lambda: defaultdict(int))
         edgeMap = defaultdict(lambda: defaultdict(int))
         for route in self.vehicle_routes.values():
@@ -375,8 +376,15 @@ class TestAgent():
             for subroute, count in freq.items():
                 if total > MIN_ROUTE_COUNT and count / total > MIN_ROUTE_PROB:
                     self.lanedist[lane][subroute] = count / total
-#        print(self.routedist)
-#        print(self.lanedist)
+        try:
+            if not os.path.isdir('custom_output'):
+                os.makedirs('custom_output')
+            if now_step > 0 and now_step % 200 == 0:
+                with open('custom_output/routes_%s.txt' % now_step, 'w') as routeOut:
+                    pprint(self.vehicle_routes, stream=routeOut)
+                    pprint(self.routedist, stream=routeOut)
+        except:
+            pass
 
     def extendRoute(self, veh, lane, road):
         if veh in self.vehicle_routes:
@@ -464,7 +472,7 @@ class TestAgent():
         for veh in unSeen:
             if self.vehicle_routes[veh][-1][0] != -100:
                 self.vehicle_routes[veh].append((-100, False))
-        self.calculateRouteDist()
+        self.calculateRouteDist(now_step)
 
         # get actions
         for agent in self.agent_list:
