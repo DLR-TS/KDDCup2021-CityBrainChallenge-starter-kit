@@ -5,9 +5,9 @@ from pprint import pprint
 from gym_cfg import HEADWAY, SLOW_THRESH, JAM_THRESH, MIN_CHECK_LENGTH, JAM_BONUS, MAX_GREEN_SEC, PREFER_DUAL_THRESHOLD
 from gym_cfg import SPEED_THRESH, STOP_LINE_HEADWAY, BUFFER_THRESH, ROUTE_LENGTH_WEIGHT, SWITCH_THRESH, LEFT_TURN_BONUS
 from gym_cfg import FUTURE_JAM_LOOKAHEAD, SATURATED_THRESHOLD, SATURATION_INC, MIN_ROUTE_COUNT, MIN_ROUTE_PROB, DELAY_WEIGHT
-from gym_cfg import BUFFER_SPEED_THRESH, BUFFER_JAM_THRESH, DUAL_SWITCH_THRESH
+from gym_cfg import BUFFER_SPEED_THRESH, BUFFER_JAM_THRESH, DUAL_SWITCH_THRESH, UNKNOWN_LANE_JAM_PROB
 import dijkstra
-
+from routes import tt
 
 PHASE_LANES = {
         1 : [ 1,  7],
@@ -240,10 +240,11 @@ class TestAgent():
                 # delayIndex is impacted more strongly by vehicles with short routes
                 # median t_ff is ~720
                 # TODO try to weight by t_ff up to now
-                baseWeight = (now_step - vehData['start_time'][0] + DELAY_WEIGHT) / (vehData['t_ff'][0] + DELAY_WEIGHT)
+#                baseWeight = (now_step - vehData['start_time'][0] + DELAY_WEIGHT) / (vehData['t_ff'][0] + DELAY_WEIGHT)
+#                baseWeight *= ROUTE_LENGTH_WEIGHT / (vehData['t_ff'][0] + ROUTE_LENGTH_WEIGHT)
 #                baseWeight *= ROUTE_LENGTH_WEIGHT / (vehData['t_ff'][0] + ROUTE_LENGTH_WEIGHT)
 #                baseWeight *= max(1, 1.3 - stoplineDist / MIN_CHECK_LENGTH)
-#                baseWeight = (route_length_weight / vehData.get('t_ff', [route_length_weight])[0])
+                baseWeight = (route_length_weight / vehData.get('t_ff', [route_length_weight])[0])
 #                baseWeight = 1.
 #                fjPenalty = self.getFutureJamPenalty(route, now_step)
                 fjPenalty = 1.
@@ -322,13 +323,13 @@ class TestAgent():
                 if lane is None:
                     # only signalized nodes define 'lanes'
                     # we already know that at least one lane is jammed so let's assume the worst
-                    total += prob
+                    total += prob * UNKNOWN_LANE_JAM_PROB
                 elif lane in dstLanesJammed:
                     #print("targetLaneJammed for veh %s with route %s, targetLane=%s inRoad=%s outRoad=%s" % (
                     #    veh, route, lane, route[1], route[2]))
                     total += prob
             else:
-                total += prob
+                total += prob * UNKNOWN_LANE_JAM_PROB
         return total
 
     def getFutureJamPenalty(self, route, now_step):
@@ -463,7 +464,7 @@ class TestAgent():
                 for rl, _ in self.vehicle_routes[veh]:
                     rr = int(rl / 100)
                     t_ff += self.roads[rr]['length'] / self.roads[rr]['speed_limit']
-                info[veh]['t_ff'] = [t_ff]
+                info[veh]['t_ff'] = [t_ff + tt.get(road, [0])[0]]
             relSpeed = (speedSum / numVehs) / speedLimit if numVehs > 0 else 1.0
             # road is full and slow
             if numVehs * VEH_LENGTH > length * JAM_THRESH and relSpeed < SPEED_THRESH:
