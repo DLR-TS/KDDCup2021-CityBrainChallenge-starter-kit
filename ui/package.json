@@ -5,7 +5,7 @@
     "start": "react-scripts start"
   },
   "devDependencies": {
-    "react-scripts": "^1.0.10"
+    "react-scripts": "^5.0.1"
   },
   "dependencies": {
     "antd": "^4.2.5",
