@@ -237,284 +237,108 @@ lane being jammed) in the next interval but also different expected contribution
 to the objective function (see the section on the objective function). As a result 
 the vehicles are assigned different weights.
 
-and last but not least 
+While calculating the lane queues at a junction there is repeatedly the need to determine
+whether the destination lane(s) for an incoming lane can still accept vehicles or is jammed.
+So the algorithm calculates for every outgoing lane whether it either has many vehicles
+and a low average speed or a lot of vehicles in the insertion buffer (a region at the begin
+of the lane where vehicles are placed which want to enter the lane but have not found 
+a suitable position yet). Those lanes are marked as jammed.
 
+Now the vehicles which contribute to the queue are determined by checking their time distance
+(speed over distance) to the stop line against a threshold and respecting (almost) standing vehicles.
+For those vehicles the probability that their destination lane is jammed is calculated. If all destination
+lanes are jammed the probability is $1$, if all are free it is $0$. For all the remaining cases the 
+possible future routes are evaluated from the probability distribution determined earlier.
+
+Summing over all possible future routes it is possible to determine a probability that the target lane 
+of the vehicle is jammed. In case of an unknown future lane a calibratable constant is used. This
+gives for each vehicle the probability $p_j$to have a jammed lane ahead. The second important
+factor is the (expected) free flow travel time $t_f$ of the vehicle (see the section on the objective 
+function for a detailed discussion). Since an expected value for the remaining time has been determined
+by the pre-processing and the free flow time up to the current edge is known precisely.
+
+The weight of a vehicle can now be determined using the following equation:
+\begin{equation}
+w = \frac{T}{t_f} (1- p_j)
+\end{equation}
+where $T$ is the average expected free flow travel time over all vehicles (again a constant 
+which can be calibrated). Please observe that the value may range from $0$ to $\infty$ but 
+a \emph{regular} vehicle should have a weight of about $1$.
+
+The weight of a lane queue is now simply the sum over all weights of the vehicles considered relevant.
+In order to cover the case of short edges leading to a junction where upstream jams may extend to
+different edges this evaluation is also extended to all predecessor lanes on upstream roads but only if
+there is no traffic light junction inbetween.
 
 \subsection{Long term jams}
 For every lane which has more than a defined number of vehicles on it and operates below
 a defined speed threshold a jam bonus is collected over time leading to eventually 
-resolved long term jams.
+resolved long term jams. This jam bonus is added to every lane right at the end of the queue
+length calculation. Unlike the queue length above which is recalculated on every iteration,
+this bonus adds up over time until a switch to a different traffic light phase occurs.
 
 \section{Improvements}
+The basic algorithm is now described but as can be seen it involves several thresholds and constants
+which need to be adapted. In total the algorithm has 23 parameters which were optimized indivdually.
+In order to do so first the possible ranges for all parameters are determined and then a rastering
+of the value range has been done by using equidistant samples (usually ten) in the range of values.
+This way near optimal values wirth respect to the test data set could be reached.
+
+\begin{table*}
+  \caption{Parameters of the model}
+  \label{tab:param}
+  \begin{tabular}{lrlc}
+    \toprule
+    Name&Final value&Description&Range\\
+    \midrule
+DUAL\_SWITCH\_THRESH& 0.1 & difference in queue lengths which triggers switch optimized &-1 19\\
+SWITCH\_THRESH & 0.5 & difference in queue lengths which triggers switch optimized &-0.1 0.9\\
+ROUTE\_LENGTH\_WEIGHT & 689.0 & to be optimized &600 1200\\
+MIN\_CHECK\_LENGTH & 29.0 & look upstream to find more queued vehicles if a lane is shorter than this &25 65\\
+JAM\_THRESH & 0 & at which relative occupancy a lane is considered jammed&0 2\\
+SPEED\_THRESH & 0.025 & at which relative speed a lane is considered jammed&0 0.1\\
+JAM\_BONUS & 0.1 & bonus vehicles to add to a jammed lane per act call (every 10s) until it gets green & 0 1\\
+HEADWAY & 2.05 & to be optimized& 1.2 2.2\\
+SLOW\_THRESH & 0 & at which relative speed a vehicle is considered slow, to be optimized &0.05 0.15\\
+MAX\_GREEN\_SEC & 164.0 & to be optimized &140 220\\
+PREFER\_DUAL\_THRESHOLD & 4.0 & How many vehicles could pass the intersection in 5s all red &1 11\\
+& & (if we have more vehicles in a dual queue switching, beats single queue discharge)\\
+STOP\_LINE\_HEADWAY & 10.8 & seconds to the stopline to be included in the queue &8 12\\
+BUFFER\_THRESH & 1.0 & number of vehicles in lane insertion buffer to consider lane jammed &1 11\\
+FUTURE\_JAM\_LOOKAHEAD & 3 & number of edges & 3 13\\
+SATURATED\_THRESHOLD & 44 & optimized &30 50\\
+SATURATION\_INC & 5& optimized &5 15\\
+MIN\_ROUTE\_PROB & 0.9 & optimized &0 1\\
+MIN\_ROUTE\_COUNT & 7.0 & optimized &0 20\\
+DELAY\_WEIGHT & 35.0 & optimized &0 50\\
+LEFT\_TURN\_BONUS & 30 & optimized &0 50\\
+BUFFER\_JAM\_THRESH & 1.8 &&\\
+BUFFER\_SPEED\_THRESH & 0 &&\\
+UNKNOWN\_LANE\_JAM\_PROB & 1.2 & optimized &0.6 1.6\\
+  \bottomrule
+\end{tabular}
+\end{table*}
+
+
+In the process several automated multidimensional optimization schemes like \texttt{optimparallel},
+\texttt{scikit-optimize} or \texttt{scipy.optimize.fmin\_cobyla} have been tested as well but due to the
+very fragile environment (high random fluctuation of the results) they were considered too unstable.
 
 \section{Objective Function}
 
-\section{Tables}
+\section{Evaluation using SUMO}
+In order to evaluate the 
 
-The ``\verb|acmart|'' document class includes the ``\verb|booktabs|''
-package --- \url{https://ctan.org/pkg/booktabs} --- for preparing
-high-quality tables.
 
-Table captions are placed {\itshape above} the table.
+\section{Outlook}
+All the resulting code will be made publicly available on GitHub once all publications in connection 
+with the algorithm are done.
 
-Because tables cannot be split across pages, the best placement for
-them is typically the top of the page nearest their initial cite.  To
-ensure this proper ``floating'' placement of tables, use the
-environment \textbf{table} to enclose the table's contents and the
-table caption.  The contents of the table itself must go in the
-\textbf{tabular} environment, to be aligned properly in rows and
-columns, with the desired horizontal and vertical rules.  Again,
-detailed instructions on \textbf{tabular} material are found in the
-\textit{\LaTeX\ User's Guide}.
-
-Immediately following this sentence is the point at which
-Table~\ref{tab:freq} is included in the input file; compare the
-placement of the table here with the table in the printed output of
-this document.
-
-\begin{table}
-  \caption{Frequency of Special Characters}
-  \label{tab:freq}
-  \begin{tabular}{ccl}
-    \toprule
-    Non-English or Math&Frequency&Comments\\
-    \midrule
-    \O & 1 in 1,000& For Swedish names\\
-    $\pi$ & 1 in 5& Common in math\\
-    \$ & 4 in 5 & Used in business\\
-    $\Psi^2_1$ & 1 in 40,000& Unexplained usage\\
-  \bottomrule
-\end{tabular}
-\end{table}
-
-To set a wider table, which takes up the whole width of the page's
-live area, use the environment \textbf{table*} to enclose the table's
-contents and the table caption.  As with a single-column table, this
-wide table will ``float'' to a location deemed more
-desirable. Immediately following this sentence is the point at which
-Table~\ref{tab:commands} is included in the input file; again, it is
-instructive to compare the placement of the table here with the table
-in the printed output of this document.
-
-\begin{table*}
-  \caption{Some Typical Commands}
-  \label{tab:commands}
-  \begin{tabular}{ccl}
-    \toprule
-    Command &A Number & Comments\\
-    \midrule
-    \texttt{{\char'134}author} & 100& Author \\
-    \texttt{{\char'134}table}& 300 & For tables\\
-    \texttt{{\char'134}table*}& 400& For wider tables\\
-    \bottomrule
-  \end{tabular}
-\end{table*}
-
-Always use midrule to separate table header rows from data rows, and
-use it only for this purpose. This enables assistive technologies to
-recognise table headers and support their users in navigating tables
-more easily.
-
-\section{Math Equations}
-You may want to display math equations in three distinct styles:
-inline, numbered or non-numbered display.  Each of the three are
-discussed in the next sections.
-
-\subsection{Inline (In-text) Equations}
-A formula that appears in the running text is called an inline or
-in-text formula.  It is produced by the \textbf{math} environment,
-which can be invoked with the usual
-\texttt{{\char'134}begin\,\ldots{\char'134}end} construction or with
-the short form \texttt{\$\,\ldots\$}. You can use any of the symbols
-and structures, from $\alpha$ to $\omega$, available in
-\LaTeX~\cite{Lamport:LaTeX}; this section will simply show a few
-examples of in-text equations in context. Notice how this equation:
-\begin{math}
-  \lim_{n\rightarrow \infty}x=0
-\end{math},
-set here in in-line math style, looks slightly different when
-set in display style.  (See next section).
-
-\subsection{Display Equations}
-A numbered display equation---one set off by vertical space from the
-text and centered horizontally---is produced by the \textbf{equation}
-environment. An unnumbered display equation is produced by the
-\textbf{displaymath} environment.
-
-Again, in either environment, you can use any of the symbols and
-structures available in \LaTeX\@; this section will just give a couple
-of examples of display equations in context.  First, consider the
-equation, shown as an inline equation above:
-\begin{equation}
-  \lim_{n\rightarrow \infty}x=0
-\end{equation}
-Notice how it is formatted somewhat differently in
-the \textbf{displaymath}
-environment.  Now, we'll enter an unnumbered equation:
-\begin{displaymath}
-  \sum_{i=0}^{\infty} x + 1
-\end{displaymath}
-and follow it with another numbered equation:
-\begin{equation}
-  \sum_{i=0}^{\infty}x_i=\int_{0}^{\pi+2} f
-\end{equation}
-just to demonstrate \LaTeX's able handling of numbering.
-
-\section{Citations and Bibliographies}
-
-The use of \BibTeX\ for the preparation and formatting of one's
-references is strongly recommended. Authors' names should be complete
---- use full first names (``Donald E. Knuth'') not initials
-(``D. E. Knuth'') --- and the salient identifying features of a
-reference should be included: title, year, volume, number, pages,
-article DOI, etc.
-
-The bibliography is included in your source document with these two
-commands, placed just before the \verb|\end{document}| command:
-\begin{verbatim}
-  \bibliographystyle{ACM-Reference-Format}
-  \bibliography{bibfile}
-\end{verbatim}
-where ``\verb|bibfile|'' is the name, without the ``\verb|.bib|''
-suffix, of the \BibTeX\ file.
-
-Citations and references are numbered by default. A small number of
-ACM publications have citations and references formatted in the
-``author year'' style; for these exceptions, please include this
-command in the {\bfseries preamble} (before the command
-``\verb|\begin{document}|'') of your \LaTeX\ source:
-\begin{verbatim}
-  \citestyle{acmauthoryear}
-\end{verbatim}
-
-  Some examples.  A paginated journal article \cite{Abril07}, an
-  enumerated journal article \cite{Cohen07}, a reference to an entire
-  issue \cite{JCohen96}, a monograph (whole book) \cite{Kosiur01}, a
-  monograph/whole book in a series (see 2a in spec. document)
-  \cite{Harel79}, a divisible-book such as an anthology or compilation
-  \cite{Editor00} followed by the same example, however we only output
-  the series if the volume number is given \cite{Editor00a} (so
-  Editor00a's series should NOT be present since it has no vol. no.),
-  a chapter in a divisible book \cite{Spector90}, a chapter in a
-  divisible book in a series \cite{Douglass98}, a multi-volume work as
-  book \cite{Knuth97}, a couple of articles in a proceedings (of a
-  conference, symposium, workshop for example) (paginated proceedings
-  article) \cite{Andler79, Hagerup1993}, a proceedings article with
-  all possible elements \cite{Smith10}, an example of an enumerated
-  proceedings article \cite{VanGundy07}, an informally published work
-  \cite{Harel78}, a couple of preprints \cite{Bornmann2019,
-    AnzarootPBM14}, a doctoral dissertation \cite{Clarkson85}, a
-  master's thesis: \cite{anisi03}, an online document / world wide web
-  resource \cite{Thornburg01, Ablamowicz07, Poker06}, a video game
-  (Case 1) \cite{Obama08} and (Case 2) \cite{Novak03} and \cite{Lee05}
-  and (Case 3) a patent \cite{JoeScientist001}, work accepted for
-  publication \cite{rous08}, 'YYYYb'-test for prolific author
-  \cite{SaeediMEJ10} and \cite{SaeediJETC10}. Other cites might
-  contain 'duplicate' DOI and URLs (some SIAM articles)
-  \cite{Kirschmer:2010:AEI:1958016.1958018}. Boris / Barbara Beeton:
-  multi-volume works as books \cite{MR781536} and \cite{MR781537}. A
-  couple of citations with DOIs:
-  \cite{2004:ITE:1009386.1010128,Kirschmer:2010:AEI:1958016.1958018}. Online
-  citations: \cite{TUGInstmem, Thornburg01, CTANacmart}. Artifacts:
-  \cite{R} and \cite{UMassCitations}.
-
-\section{Acknowledgments}
-
-Identification of funding sources and other support, and thanks to
-individuals and groups that assisted in the research and the
-preparation of the work should be included in an acknowledgment
-section, which is placed just before the reference section in your
-document.
-
-This section has a special environment:
-\begin{verbatim}
-  \begin{acks}
-  ...
-  \end{acks}
-\end{verbatim}
-so that the information contained therein can be more easily collected
-during the article metadata extraction phase, and to ensure
-consistency in the spelling of the section heading.
-
-Authors should not prepare this section as a numbered or unnumbered {\verb|\section|}; please use the ``{\verb|acks|}'' environment.
-
-\section{Appendices}
-
-If your work needs an appendix, add it before the
-``\verb|\end{document}|'' command at the conclusion of your source
-document.
-
-Start the appendix with the ``\verb|appendix|'' command:
-\begin{verbatim}
-  \appendix
-\end{verbatim}
-and note that in the appendix, sections are lettered, not
-numbered. This document has two appendices, demonstrating the section
-and subsection identification method.
-
-\section{SIGCHI Extended Abstracts}
-
-The ``\verb|sigchi-a|'' template style (available only in \LaTeX\ and
-not in Word) produces a landscape-orientation formatted article, with
-a wide left margin. Three environments are available for use with the
-``\verb|sigchi-a|'' template style, and produce formatted output in
-the margin:
-\begin{itemize}
-\item {\verb|sidebar|}:  Place formatted text in the margin.
-\item {\verb|marginfigure|}: Place a figure in the margin.
-\item {\verb|margintable|}: Place a table in the margin.
-\end{itemize}
-
-%%
-%% The acknowledgments section is defined using the "acks" environment
-%% (and NOT an unnumbered section). This ensures the proper
-%% identification of the section in the article metadata, and the
-%% consistent spelling of the heading.
 \begin{acks}
-To Robert, for the bagels and explaining CMYK and color spaces.
+Thank you to the organizers of the competition.
 \end{acks}
 
-%%
-%% The next two lines define the bibliography style to be used, and
-%% the bibliography file.
-\bibliographystyle{ACM-Reference-Format}
-\bibliography{sample-base}
-
-%%
-%% If your work has an appendix, this is the place to put it.
-\appendix
-
-\section{Research Methods}
-
-\subsection{Part One}
-
-Lorem ipsum dolor sit amet, consectetur adipiscing elit. Morbi
-malesuada, quam in pulvinar varius, metus nunc fermentum urna, id
-sollicitudin purus odio sit amet enim. Aliquam ullamcorper eu ipsum
-vel mollis. Curabitur quis dictum nisl. Phasellus vel semper risus, et
-lacinia dolor. Integer ultricies commodo sem nec semper.
-
-\subsection{Part Two}
-
-Etiam commodo feugiat nisl pulvinar pellentesque. Etiam auctor sodales
-ligula, non varius nibh pulvinar semper. Suspendisse nec lectus non
-ipsum convallis congue hendrerit vitae sapien. Donec at laoreet
-eros. Vivamus non purus placerat, scelerisque diam eu, cursus
-ante. Etiam aliquam tortor auctor efficitur mattis.
-
-\section{Online Resources}
-
-Nam id fermentum dui. Suspendisse sagittis tortor a nulla mollis, in
-pulvinar ex pretium. Sed interdum orci quis metus euismod, et sagittis
-enim maximus. Vestibulum gravida massa ut felis suscipit
-congue. Quisque mattis elit a risus ultrices commodo venenatis eget
-dui. Etiam sagittis eleifend elementum.
-
-Nam interdum magna at lectus dignissim, ac dignissim lorem
-rhoncus. Maecenas eu arcu ac neque placerat aliquam. Nunc pulvinar
-massa et mattis lacinia.
 
 \end{document}
-\endinput
 %%
 %% End of file `sample-authordraft.tex'.
